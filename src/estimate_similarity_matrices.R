@@ -22,10 +22,10 @@ whitening <- function(E, shrinkage = "ledoitwolf") {
   # corrplot::corrplot(cov2cor(S), method = "color")
   H <- diag(nrow(S))  ## target to shrink towards (Ledoit-Wolf's 'F')
   
-  if (shrink %in% c("lw", "ledoitwolf", "LW"))  {
+  if (shrinkage %in% c("lw", "ledoitwolf", "LW"))  {
     k <- tawny::shrinkage.intensity(E, H, S)
     lambda <- max(c(0, min(k / nrow(E), 1)))  ## shrinkage factor
-  }
+  } else lambda <- shrinkage
   
   S_hat <- lambda * H + (1 - lambda) * S  ## shrunken matrix
   
@@ -46,7 +46,7 @@ subjs <- list.dirs(dir.results, recursive = FALSE, full.names = FALSE)
 # sessi.short <- c("Bas", "Pro", "Rea")
 sessi <- "baseline"
 sessi.short <- "Bas"
-n.knots <- 8
+n.knots <- 6
 # glms <- c("tentper2tr", "tentpertr")
 glms <- "Congruency_EVENTS_censored"
 regressors <- c("PC50Con", "PC50InCon", "biasCon", "biasInCon")
@@ -231,8 +231,7 @@ for (sess.i in seq_along(sessi)) {
           ## TODO: cross-validated RSA
           ## each measure: corrleation, euclidean
           ## each normalization: raw, prew
-          
-          
+
           
         }
         
@@ -250,8 +249,8 @@ for (sess.i in seq_along(sessi)) {
 
 ## save ----
 
-saveRDS(r.vn, here("out", "mean-contrasts_runwise_schaefer400.rds"))
-saveRDS(r.cv, here("out", "runwise", "reliability-contrasts_runwise_schaefer400.rds"))
+saveRDS(r.vn, here("out", "rsa", "rmatrix_vanilla_shaefer400.rds"))
+# saveRDS(r.cv, here("out", "rsa", "rmatrix_crossva_shaefer400.rds"))
 
 
 
