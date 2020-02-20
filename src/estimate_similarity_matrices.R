@@ -13,6 +13,8 @@ library(cifti)
 library(abind)
 library(data.table)
 library(mikeutils)
+library(progress)
+library(profvis)
 
 ## functions
 
@@ -21,17 +23,25 @@ whitening <- function(E, shrinkage = "ledoitwolf") {
   S <- cov(E)  ## sample cov
   # corrplot::corrplot(cov2cor(S), method = "color")
   H <- diag(nrow(S))  ## target to shrink towards (Ledoit-Wolf's 'F')
-  
+
   if (shrinkage %in% c("lw", "ledoitwolf", "LW"))  {
     k <- tawny::shrinkage.intensity(E, H, S)
     lambda <- max(c(0, min(k / nrow(E), 1)))  ## shrinkage factor
   } else lambda <- shrinkage
-  
+
   S_hat <- lambda * H + (1 - lambda) * S  ## shrunken matrix
   
-  solve(S_hat)  ## mahalanobis whitening matrix^2
+  W2 <- solve(S_hat)  ## mahalanobis whitening matrix^2
+  
+  list(W2 = W2, lambda = lambda)
   
 }
+
+is_equal <- function(x, y, tol = .Machine$double.eps^0.5) {
+  ## https://stackoverflow.com/questions/35097815/vectorized-equality-testing
+  abs(x - y) < tol
+}
+
 
 ## variables
 
@@ -47,9 +57,8 @@ subjs <- list.dirs(dir.results, recursive = FALSE, full.names = FALSE)
 sessi <- "baseline"
 sessi.short <- "Bas"
 n.knots <- 6
-# glms <- c("tentper2tr", "tentpertr")
 glms <- "Congruency_EVENTS_censored"
-regressors <- c("PC50Con", "PC50InCon", "biasCon", "biasInCon")
+regressors <- c("PC50InCon", "biasInCon", "PC50Con", "biasCon")
 measures <- c("corr", "eucl")
 normalizations <- c("raw", "prw")
 rsatypes <- c("vanilla", "crossval")
@@ -109,11 +118,23 @@ r.cv <- array(
   )
 )
 
+## for tallying unresponsive voxels
+counts.silent <- as.data.table(expand.grid(subj = subjs, session = sessi, glm = glms, roi = parcellation$key))
+counts.silent$n <- as.numeric(NA)
 
+shrinkages <- as.data.table(expand.grid(subj = subjs, session = sessi, glm = glms, roi = parcellation$key))
+shrinkages$lambda.run1 <- as.numeric(NA)
+shrinkages$lambda.run2 <- as.numeric(NA)
 
 ## loop ----
 
+n.iter <- length(sessi) * length(subjs) * length(glms) * length(parcellation$key)
+pb <- progress_bar$new(
+  format = " downloading [:bar] :percent eta: :eta (elapsed :elapsed)",
+  total = n.iter, clear = FALSE, width = 120
+)
 
+time.begin <- Sys.time()
 for (sess.i in seq_along(sessi)) {
   # sess.i = 1
   
@@ -175,12 +196,24 @@ for (sess.i in seq_along(sessi)) {
       
       for (roi.i in seq_along(parcellation$key)) {
         # roi.i = 1
-        
-        ## mask region
+# profvis({
+        ## extract roi
         
         name.roi.i <- parcellation$key[roi.i]
         betas.i <- betas[, parcellation$atlas == roi.i, ]
         resid.i <- resid[, parcellation$atlas == roi.i, ]
+        
+        ## remove unresponsive vertices (no variance across conditions in any run)
+        
+        var.vert <- apply(resid.i, c(2, 3), var)
+        is.silent <- rowSums(is_equal(var.vert, 0)) > 0
+        betas.i <- betas.i[, !is.silent, ]
+        resid.i <- resid.i[, !is.silent, ]
+        
+        counts.silent[
+          subj == name.subj.i & session == name.sess.i & glm == name.glm.i & roi == name.roi.i,
+          "n"
+          ] <- sum(is.silent)  ## tally
         
         n.vert <- ncol(betas.i)  ## number vertices
         
@@ -192,29 +225,34 @@ for (sess.i in seq_along(sessi)) {
           rows.knot.i <- grep(paste0("#", knot.i - 1, "_Coef"), rownames(betas.i))  ## minus one b/c 0-based ind.
           betas.ii <- betas.i[rows.knot.i, , ]
           
-          ## reshape betas to matrix
+          ## reshape betas to matrix & rename/rearrange to match dims of storage array
           
           betas.ii.mat <- t(rbind(betas.ii[, , 1], betas.ii[, , 2]))
-          colnames(betas.ii.mat) <- c(
-            paste0(rownames(betas.ii[, , 1]), "_run1"),  
-            paste0(rownames(betas.ii[, , 1]), "_run2")
-          )
+          colnames(betas.ii.mat) <- paste0(colnames(betas.ii.mat), rep(c("_run1", "_run2"), each = length(regressors)))
+          colnames(betas.ii.mat) <- gsub("#.*_Coef", "", colnames(betas.ii.mat))  ## remove knot info
+          betas.ii.mat <- betas.ii.mat[, rownames(r.vn)]  ## rearrange col order
+
+          ## prewhiten patterns (bottleneck)
           
-          dimnames.are.ok <- identical(
-            rownames(r.vn[, , subj.i, sess.i, roi.i, "corr", "raw", knot.i, name.glm.i]),
-            colnames(betas.ii.mat) %>% gsub("#.*_Coef", "", .)
-          )
-          if (!dimnames.are.ok) stop("fix dimnames")
+          whitened.run1 <- whitening(resid.i[, , 1])
+          whitened.run2 <- whitening(resid.i[, , 2])
           
-          ## prewhiten patterns
+          saveRDS(
+            list(run1 = whitened.run1, run2 = whitened.run2), 
+            here(
+              "out", "rsa", "whitening_matrices", 
+              paste0("glm-", name.glm.i, "_schaefer400-", roi.i, "_subj-", name.subj.i)
+              )
+            )
           
-          W2 <- (whitening(resid.i[, , 1]) + whitening(resid.i[, , 2])) / 2  ## inverse cov matrix
+          (whitened.run1$W1 + whitened.run1$W2) / 2  ## mean of inverse cov matrices
+          
+          W2 <- (whitening(resid.i[, , 1]) + whitening(resid.i[, , 2])) / 2  ## mean of inverse cov matrices
           W <- expm::sqrtm(W2)  ## square root (mahalanobis whitening matrix)
           betas.ii.mat.w <- W %*% betas.ii.mat
           
           # betas.ii <- plyr::aaply(betas.ii, 3, function(b) b %*% W)  ## apply
           # betas.ii <- aperm(betas.ii1, c(2, 3, 1))  ## permute array back to (condition * vertex * run )
-
                     
           ## vanilla RSA (includes both cross-run and within-run similarity matrices)
 
@@ -228,33 +266,30 @@ for (sess.i in seq_along(sessi)) {
           r.vn[, , subj.i, sess.i, roi.i, "corr", "prw", knot.i, name.glm.i] <- cor(betas.ii.mat.w)
           r.vn[, , subj.i, sess.i, roi.i, "eucl", "prw", knot.i, name.glm.i] <- dist2mat(betas.ii.mat.w) / n.vert
           
+          # qcor(cor(betas.ii.mat.w))
+          # qcor(cor(betas.ii.mat))
+          
+          
           ## TODO: cross-validated RSA
           ## each measure: corrleation, euclidean
           ## each normalization: raw, prew
 
-          
-        }
+        }  ## knot loop end
         
-      }
+        pb$tick()  ## track progress
+# })
+      }  ## roi loop end
       
     }  ## glm loop end
     
-    print(subj.i)
-    
   }  ## subj loop end
   
-  print(sess.i)
-  
 }  ## end session loop
+
+time.run <- Sys.time() - time.begin
+print(time.run)
 
 ## save ----
 
 saveRDS(r.vn, here("out", "rsa", "rmatrix_vanilla_shaefer400.rds"))
 # saveRDS(r.cv, here("out", "rsa", "rmatrix_crossva_shaefer400.rds"))
-
-
-
-
-
-
-
