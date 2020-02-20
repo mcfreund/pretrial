@@ -130,7 +130,7 @@ shrinkages$lambda.run2 <- as.numeric(NA)
 
 n.iter <- length(sessi) * length(subjs) * length(glms) * length(parcellation$key)
 pb <- progress_bar$new(
-  format = " downloading [:bar] :percent eta: :eta (elapsed :elapsed)",
+  format = " running [:bar] :percent eta: :eta (elapsed :elapsed)",
   total = n.iter, clear = FALSE, width = 120
 )
 
