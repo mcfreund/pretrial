@@ -153,29 +153,35 @@ for (sess.i in seq_along(sessi)) {
       betas <- vector("list", 4) %>% setNames(combo_paste(c("run1", "run2"), c("L", "R")))
       resid <- betas
       
+      f.betas <- c(
+        run1_R = file.path(paste0(dirs, "_run1"), paste0("betas_", subjs[subj.i], "_R.func.gii")),
+        run1_L = file.path(paste0(dirs, "_run1"), paste0("betas_", subjs[subj.i], "_L.func.gii")),
+        run2_R = file.path(paste0(dirs, "_run2"), paste0("betas_", subjs[subj.i], "_R.func.gii")),
+        run2_L = file.path(paste0(dirs, "_run2"), paste0("betas_", subjs[subj.i], "_L.func.gii"))
+      )
+      f.resid <- c(
+        run1_R = file.path(paste0(dirs, "_run1"), paste0("wherr_", subjs[subj.i], "_R.func.gii")),
+        run1_L = file.path(paste0(dirs, "_run1"), paste0("wherr_", subjs[subj.i], "_L.func.gii")),
+        run2_R = file.path(paste0(dirs, "_run2"), paste0("wherr_", subjs[subj.i], "_R.func.gii")),
+        run2_L = file.path(paste0(dirs, "_run2"), paste0("wherr_", subjs[subj.i], "_L.func.gii"))
+      )
+
+      file.is.missing <- any(!file.exists(f.betas, f.resid))
+      if (file.is.missing) next
+      
       for (name.run.i in c("run1", "run2")) {
         # name.run.i = "run1"
         for (name.hemi.i in c("L", "R")) {
           # name.hemi.i = "L"
           
-          f.betas <- file.path(
-            paste0(dirs, "_", name.run.i), paste0("betas_", subjs[subj.i], "_", name.hemi.i, ".func.gii")
-            )
-          f.resid <- file.path(
-            paste0(dirs, "_", name.run.i), paste0("wherr_", subjs[subj.i], "_", name.hemi.i, ".func.gii")
-            )
-          
-          file.is.missing <- !file.exists(f.betas) | !file.exists(f.resid)
-          if (file.is.missing) next  ## go to next task!
-          
           name.run.hemi.i <- paste0(name.run.i, "_", name.hemi.i)
           
           betas[[name.run.hemi.i]] <- collate_surface_params(
-            f.betas, 
+            f.betas[name.run.hemi.i], 
             pattern = paste0(regressors, c("#[0-9]"), collapse = "|")
           )  ## bottleneck (read betas, not stats, for speed (b/c only need betas))
           
-          resid[[name.run.hemi.i]] <- read_gifti2matrix(f.resid)  ## bottleneck
+          resid[[name.run.hemi.i]] <- read_gifti2matrix(f.resid[name.run.hemi.i])  ## bottleneck
           
         }
       }
