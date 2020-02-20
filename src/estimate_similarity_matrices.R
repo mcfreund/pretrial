@@ -159,7 +159,7 @@ for (sess.i in seq_along(sessi)) {
           # name.hemi.i = "L"
           
           f.betas <- file.path(
-            paste0(dirs, "_", name.run.i), paste0("stats_", subjs[subj.i], "_", name.hemi.i, ".func.gii")
+            paste0(dirs, "_", name.run.i), paste0("betas_", subjs[subj.i], "_", name.hemi.i, ".func.gii")
             )
           f.resid <- file.path(
             paste0(dirs, "_", name.run.i), paste0("wherr_", subjs[subj.i], "_", name.hemi.i, ".func.gii")
@@ -172,10 +172,10 @@ for (sess.i in seq_along(sessi)) {
           
           betas[[name.run.hemi.i]] <- collate_surface_params(
             f.betas, 
-            pattern = combopaste(regressors, c("#[0-9]*_Coef")) %>% paste0(collapse = "|")
-          )
+            pattern = paste0(regressors, c("#[0-9]"), collapse = "|")
+          )  ## bottleneck (read betas, not stats, for speed (b/c only need betas))
           
-          resid[[name.run.hemi.i]] <- read_gifti2matrix(f.resid)
+          resid[[name.run.hemi.i]] <- read_gifti2matrix(f.resid)  ## bottleneck
           
         }
       }
@@ -222,17 +222,17 @@ for (sess.i in seq_along(sessi)) {
           
           ## extract knot
           
-          rows.knot.i <- grep(paste0("#", knot.i - 1, "_Coef"), rownames(betas.i))  ## minus one b/c 0-based ind.
+          rows.knot.i <- grep(paste0("#", knot.i - 1), rownames(betas.i))  ## minus one b/c 0-based ind.
           betas.ii <- betas.i[rows.knot.i, , ]
           
           ## reshape betas to matrix & rename/rearrange to match dims of storage array
           
           betas.ii.mat <- t(rbind(betas.ii[, , 1], betas.ii[, , 2]))
           colnames(betas.ii.mat) <- paste0(colnames(betas.ii.mat), rep(c("_run1", "_run2"), each = length(regressors)))
-          colnames(betas.ii.mat) <- gsub("#.*_Coef", "", colnames(betas.ii.mat))  ## remove knot info
+          colnames(betas.ii.mat) <- gsub("#[0-9]", "", colnames(betas.ii.mat))  ## remove knot info
           betas.ii.mat <- betas.ii.mat[, rownames(r.vn)]  ## rearrange col order
 
-          ## prewhiten patterns (bottleneck)
+          ## prewhiten patterns (a bottleneck, so save results)
           
           whitened.run1 <- whitening(resid.i[, , 1])
           whitened.run2 <- whitening(resid.i[, , 2])
@@ -241,13 +241,11 @@ for (sess.i in seq_along(sessi)) {
             list(run1 = whitened.run1, run2 = whitened.run2), 
             here(
               "out", "rsa", "whitening_matrices", 
-              paste0("glm-", name.glm.i, "_schaefer400-", roi.i, "_subj-", name.subj.i)
+              paste0("glm-", name.glm.i, "_schaefer400-", roi.i, "_subj-", name.subj.i, ".RDS")
               )
             )
-          
-          (whitened.run1$W1 + whitened.run1$W2) / 2  ## mean of inverse cov matrices
-          
-          W2 <- (whitening(resid.i[, , 1]) + whitening(resid.i[, , 2])) / 2  ## mean of inverse cov matrices
+
+          W2 <- (whitened.run1$W2 + whitened.run1$W2) / 2  ## mean of inverse cov matrices
           W <- expm::sqrtm(W2)  ## square root (mahalanobis whitening matrix)
           betas.ii.mat.w <- W %*% betas.ii.mat
           
