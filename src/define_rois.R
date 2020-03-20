@@ -18,15 +18,15 @@ library(profvis)
 
 ## variables
 
-parcellation <- read_atlas("schaefer400")
+# dir.ccp.hcp <- "/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/HCP_SUBJECTS_BACKUPS/AFNI_ANALYSIS"
+# dir.subsubj <- "/data/nil-external/ccp/witzermanm/AFNI_ANALYSIS_SUBSUBJECT"
+# dir.results <- file.path(dir.subsubj, "RESULTS_RUNWISE")
 
-dir.ccp.hcp <- "/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/HCP_SUBJECTS_BACKUPS/AFNI_ANALYSIS"
-dir.subsubj <- "/data/nil-external/ccp/witzermanm/AFNI_ANALYSIS_SUBSUBJECT"
-dir.results <- file.path(dir.subsubj, "RESULTS_RUNWISE")
-
-subjs <- list.dirs(dir.results, recursive = FALSE, full.names = FALSE)
+pretrial <- fread(here("data", "pretrial_behavior.csv"))
+pretrial.subjsum <- fwrite(here("data", "pretrial_subjsumm.csv"))
 
 r.vn <- readRDS(here("out", "rsa", "rmatrix_vanilla_shaefer400.rds"))  ## vanilla RSA
+
 # str(r.vn)
 # sessi <- "baseline"
 # sessi.short <- "Bas"
