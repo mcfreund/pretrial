@@ -33,12 +33,10 @@ stroop <- fread(
 ## get bad subjects ----
 
 pretrial.subjsum <- subjsum %>% filter(session %in% c("bas", "pro"), task == "stp", mb == "four", !grepl("(old)", subj))
-subjs.bad <- pretrial.subjsum[
-  with(
-    pretrial.subjsum,
+subjs.bad <- pretrial.subjsum %>% 
+  filter(
     per.censored > 20 | per.error > 20 | per.have.rt.stroop < 80 | missing.rows | num.gii == 0
-    ),
-  ] %>%
+  ) %>%
   pull(subj) %>% unique
 
 
