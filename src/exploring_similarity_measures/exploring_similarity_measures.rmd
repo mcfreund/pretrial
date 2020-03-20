@@ -1,0 +1,240 @@
+---
+title: 'Exploring similarity measures'
+author: "michael freund"
+date: "3/20/2020"
+output:
+  html_document:
+    toc: true
+    highlight: zenburn
+---
+
+```{r setup, include = FALSE}
+
+knitr::opts_chunk$set(
+  cache = TRUE, echo = FALSE, warning = FALSE, message = FALSE,
+  fig.align = 'center',
+  fig.width = 11.5, fig.fullwidth = TRUE
+  )
+
+set.seed(0)
+
+library(here)
+library(magrittr)
+library(dplyr)
+library(data.table)
+library(mikeutils)
+library(lme4)
+library(ggplot2)
+library(ggbeeswarm)
+library(grid)
+library(gridExtra)
+library(cowplot)
+library(cifti)
+library(gifti)
+# library(nifti)
+
+## variables
+
+atlas <- read_atlas("schaefer400")
+
+nodename <- Sys.info()["nodename"]
+if (nodename == "ccplinux1") {
+  dir.atlas <- "/data/nil-external/ccp/freund/atlases"
+} else if (nodename == "CCP-FREUND") {
+  dir.atlas <- "C:/local/atlases"
+}
+
+dir.ccp.hcp <- "/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/HCP_SUBJECTS_BACKUPS/AFNI_ANALYSIS"
+dir.subsubj <- "/data/nil-external/ccp/witzermanm/AFNI_ANALYSIS_SUBSUBJECT"
+dir.results <- file.path(dir.subsubj, "RESULTS_RUNWISE")
+
+pretrial <- fread(here("data", "pretrial_behavior.csv"))
+pretrial.subjsum <- fread(here("data", "pretrial_subjsumm.csv"))
+
+subjs.analysis <- unique(pretrial.subjsum[subj.set == "analysis"]$subj)
+subjs.development <- unique(pretrial.subjsum[subj.set == "development"]$subj)
+subjs.bad <- unique(pretrial.subjsum[subj.set == "bad"]$subj)
+
+subjs <- dimnames(r.vn)$subj
+
+subjs.analysis <- intersect(subjs.analysis, subjs)
+subjs.development <- intersect(subjs.development, subjs)
+subjs.bad <- intersect(subjs.bad, subjs)
+
+r.vn <- readRDS(here("out", "rsa", "rmatrix_vanilla_shaefer400.rds"))  ## vanilla RSA
+r.vn <- r.vn[, , subjs.development, , , , , , ]  ## HOLD OUT DATA!!!
+
+theme_set(theme_classic(base_size = 8))
+
+parcellation <- read_atlas("schaefer400")
+hcp <- list(
+  L  = readGIfTI(
+    file.path(dir.atlas, "surf", "HCP_S1200_GroupAvg_v1", "S1200.L.midthickness_MSMAll.32k_fs_LR.surf.gii")
+    ),
+  R = readGIfTI(
+    file.path(dir.atlas, "surf", "HCP_S1200_GroupAvg_v1", "S1200.R.midthickness_MSMAll.32k_fs_LR.surf.gii")
+    )
+)
+over <- list(
+  L = parcellation$atlas[1:(nrow(parcellation$atlas) / 2)], 
+  R = parcellation$atlas[(nrow(parcellation$atlas) / 2):nrow(parcellation$atlas)]
+  )
+
+schaefer <- list(
+  L = read_gifti2matrix(
+    "/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/ATLASES/Schaefer2018_400Parcels_7Networks_order_L.label.gii"
+    ) %>% c,
+  R = read_gifti2matrix(
+    "/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/ATLASES/Schaefer2018_400Parcels_7Networks_order_R.label.gii"
+    ) %>% c
+)
+
+
+# list.files("/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/ATLASES")
+
+```
+
+## About
+
+Goal of this analysis is to compare measures of similarity and denoising procedures in their performance.
+
+Performance criteria for include sensitivity (anatomical coverage), effect sizes (RSA-model fit), and pattern reliability (cross-run correlation).
+
+To mitigate overfitting, these analyses are conducted in a set of subjects that will be held-out from the "hypothesis-testing" set used for the main analyses.
+
+Similarity measures considered:
+
+* Pearson's correlation coefficient
+* Euclidean distance (negated)
+
+Denoising procedures considered:
+
+* "Raw", i.e., untransformed beta estimates
+* Spatially pre-whitened beta estimates
+  * using residual covariance matrix
+  * shrunken towards diagonal via Ledoit-Wolfe (sp?) procedure
+  * averaged across runs for single whitening matrix
+  * sqrt-ed and applied to each beta vector separately
+
+## stats
+
+```{r stats}
+
+## define models ----
+
+dnames <- dimnames(r.vn)$.row
+is.incon <- grepl("InCon", dnames)
+is.congr <- grepl("PC50Con|biasCon", dnames)
+is.pc50  <- grepl("PC50", dnames)
+is.bias  <- grepl("bias", dnames)
+is.run1  <- grepl("run1", dnames)
+is.run2  <- grepl("run2", dnames)
+
+
+m <- diag(length(dnames))
+dimnames(m) <- dimnames(r.vn)[c(".row", ".col")]
+m[] <- 0
+lt <- lower.tri(m)
+
+m.incon <- m
+m.incon[is.incon, is.incon] <- 1
+m.incon[is.congr, is.congr] <- 0
+m.incon[is.congr, is.incon] <- -1
+m.incon[is.incon, is.congr] <- -1
+m.incon[is.run1, is.run1] <- 0
+m.incon[is.run2, is.run2] <- 0
+
+qcor(m.incon, .title = "cross-run incongruency model")
+
+v.incon <- m.incon[lt]
+v.incon[v.incon == 1] <- 1 / sum(v.incon == 1)
+v.incon[v.incon == -1] <- -1 / sum(v.incon == -1)
+
+
+## get subject-level stats (RSA-model fits) ---
+
+stats.subjs <- apply(
+  atanh(r.vn), 
+  c("subj", "roi", "measu", "norma", "knot"),
+  function(x) x[lt] %*% v.incon
+  )
+
+stats.subjs <- reshape2::melt(stats.subjs)
+stats.subjs$num.roi <- match(stats.subjs$roi, atlas$key)
+stats.subjs %<>% mutate(hemi = substr(roi, 1, 1))
+
+## remove subjs with no glm:
+
+subjs.nofit <- stats.subjs %>%
+  filter(is.na(value)) %>%
+  pull(subj) %>%
+  as.character %>%
+  unique
+
+stats.subjs %<>% filter(!subj %in% subjs.nofit)
+
+
+## get group-level stats ----
+
+stats.group <- stats.subjs %>%
+  group_by(num.roi, roi, hemi, measu, norma, knot) %>%
+  summarize(
+    p = wilcox.test(value, alternative = "greater")$p.value,
+    m = mean(value),
+  )
+
+
+```
+
+
+
+## coverage
+
+```{r coverage}
+
+knots <- dimnames(r.vn)$knot
+
+for (name.knot.i in knots) {
+  
+  stats.group %>%
+    filter(measu == "corr", norma == "raw", knot == name.knot.i) %>%
+    build_overlay("m", template = schaefer) %>%
+    plot_surface(underlay = hcp)
+  
+}
+
+
+for (name.knot.i in knots) {
+  
+  stats.group %>%
+    filter(measu == "eucl", norma == "raw", knot == name.knot.i) %>%
+    build_overlay("m", template = schaefer) %>%
+    plot_surface(underlay = hcp)
+  
+}
+
+
+for (name.knot.i in knots) {
+  
+  stats.group %>%
+    filter(measu == "corr", norma == "prw", knot == name.knot.i) %>%
+    build_overlay("m", template = schaefer) %>%
+    plot_surface(underlay = hcp)
+  
+}
+
+for (name.knot.i in knots) {
+  
+  stats.group %>%
+    filter(measu == "eucl", norma == "prw", knot == name.knot.i) %>%
+    build_overlay("m", template = schaefer) %>%
+    plot_surface(underlay = hcp)
+  
+}
+
+rmarkdown::render(
+  here("exploring_similarity_measures.rmd")
+  )
+
+```
+
