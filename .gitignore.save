@@ -1,4 +1,4 @@
-out/rsa/*.RDS
+out/rsa/*.rds
 out/rsa/whitening_matrices/*
 
 # History files
