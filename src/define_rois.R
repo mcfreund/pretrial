@@ -23,7 +23,11 @@ library(profvis)
 # dir.results <- file.path(dir.subsubj, "RESULTS_RUNWISE")
 
 pretrial <- fread(here("data", "pretrial_behavior.csv"))
-pretrial.subjsum <- fwrite(here("data", "pretrial_subjsumm.csv"))
+pretrial.subjsum <- fread(here("data", "pretrial_subjsumm.csv"))
+
+pretrial.subjsum[subj.set == "analysis"]$subj
+
+pretrial.subjsum %>% View
 
 r.vn <- readRDS(here("out", "rsa", "rmatrix_vanilla_shaefer400.rds"))  ## vanilla RSA
 
