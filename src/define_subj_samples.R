@@ -55,7 +55,7 @@ subjs.analysis.twins <- subj.pretrial.twins %>%
   pull(subj)
 
 subjs.development <- setdiff(subj.pretrial.twins$subj, subjs.analysis.twins)
-subjs.analysis <- pretrial.subjsum %>% filter(!subj %in% subjs.development) %>% pull(subj) %>% unique
+subjs.analysis <- pretrial.subjsum %>% filter(!subj %in% c(subjs.development, subjs.bad)) %>% pull(subj) %>% unique
 
 
 ## create columns in data.frames ----
