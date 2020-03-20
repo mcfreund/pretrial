@@ -25,11 +25,14 @@ library(profvis)
 pretrial <- fread(here("data", "pretrial_behavior.csv"))
 pretrial.subjsum <- fread(here("data", "pretrial_subjsumm.csv"))
 
-pretrial.subjsum[subj.set == "analysis"]$subj
+subjs.analysis <- unique(pretrial.subjsum[subj.set == "analysis"]$subj)
+subjs.development <- unique(pretrial.subjsum[subj.set == "development"]$subj)
+subjs.bad <- unique(pretrial.subjsum[subj.set == "bad"]$subj)
 
-pretrial.subjsum %>% View
+# pretrial.subjsum %>% View
 
 r.vn <- readRDS(here("out", "rsa", "rmatrix_vanilla_shaefer400.rds"))  ## vanilla RSA
+
 
 # str(r.vn)
 # sessi <- "baseline"
