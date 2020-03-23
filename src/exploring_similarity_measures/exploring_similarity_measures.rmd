@@ -25,7 +25,11 @@ library(data.table)
 library(mikeutils)
 library(lme4)
 library(ggplot2)
+<<<<<<< HEAD
 # library(ggbeeswarm)
+=======
+library(ggbeeswarm)
+>>>>>>> 12e30cfa0d3d3809c528dc20c5d4707438b75b56
 library(grid)
 library(gridExtra)
 library(cowplot)
@@ -64,8 +68,12 @@ subjs.analysis <- intersect(subjs.analysis, subjs)
 subjs.development <- intersect(subjs.development, subjs)
 subjs.bad <- intersect(subjs.bad, subjs)
 
+<<<<<<< HEAD
 # r.vn <- r.vn[, , subjs.development, , , , , , ]  ## HOLD OUT DATA!!!
 r.vn <- r.vn[, , subjs.analysis, , , , , , ]  ## HOLD OUT DATA!!!
+=======
+r.vn <- r.vn[, , subjs.development, , , , , , ]  ## HOLD OUT DATA!!!
+>>>>>>> 12e30cfa0d3d3809c528dc20c5d4707438b75b56
 
 parcellation <- read_atlas("schaefer400")
 hcp <- list(
@@ -178,6 +186,7 @@ stats.subjs %<>% filter(!subj %in% subjs.nofit)
 ## get group-level stats ----
 
 stats.group <- stats.subjs %>%
+<<<<<<< HEAD
   filter(knot %in% c("knot2", "knot3")) %>%
   group_by(num.roi, roi, hemi, measu, norma) %>%
   summarize(
@@ -187,6 +196,14 @@ stats.group <- stats.subjs %>%
   ) %>%
   group_by(measu, norma) %>%
   mutate(p.fdr = p.adjust(p, method = "fdr"))
+=======
+  group_by(num.roi, roi, hemi, measu, norma, knot) %>%
+  summarize(
+    p = wilcox.test(value, alternative = "greater")$p.value,
+    m = mean(value),
+  )
+
+>>>>>>> 12e30cfa0d3d3809c528dc20c5d4707438b75b56
 
 ```
 
@@ -194,6 +211,7 @@ stats.group <- stats.subjs %>%
 
 ## coverage
 
+<<<<<<< HEAD
 * displayed on brains is RSA-model fit statistics (mean contrast)
 * average of knots 2 and 3
 * order: correlation raw, correlation prew, euclidean raw, euclidean prew
@@ -266,3 +284,53 @@ stats.group %>%
 
 
 
+=======
+```{r coverage}
+
+knots <- dimnames(r.vn)$knot
+
+for (name.knot.i in knots) {
+  
+  stats.group %>%
+    filter(measu == "corr", norma == "raw", knot == name.knot.i) %>%
+    build_overlay("m", template = schaefer) %>%
+    plot_surface(underlay = hcp)
+  
+}
+
+
+for (name.knot.i in knots) {
+  
+  stats.group %>%
+    filter(measu == "eucl", norma == "raw", knot == name.knot.i) %>%
+    build_overlay("m", template = schaefer) %>%
+    plot_surface(underlay = hcp)
+  
+}
+
+
+for (name.knot.i in knots) {
+  
+  stats.group %>%
+    filter(measu == "corr", norma == "prw", knot == name.knot.i) %>%
+    build_overlay("m", template = schaefer) %>%
+    plot_surface(underlay = hcp)
+  
+}
+
+for (name.knot.i in knots) {
+  
+  stats.group %>%
+    filter(measu == "eucl", norma == "prw", knot == name.knot.i) %>%
+    build_overlay("m", template = schaefer) %>%
+    plot_surface(underlay = hcp)
+  
+}
+
+rmarkdown::render(
+  here("exploring_similarity_measures.rmd")
+  )
+
+```
+
+>>>>>>> 12e30cfa0d3d3809c528dc20c5d4707438b75b56
