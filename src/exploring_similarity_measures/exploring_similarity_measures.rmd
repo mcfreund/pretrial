@@ -220,7 +220,7 @@ stats.group <- stats.subjs %>%
 
 * displayed on brains is RSA-model fit statistics (mean contrast)
 * average of knots 2 and 3
-* order: correlation raw, correlation prew, euclidean raw, euclidean prew
+* order: correlation, euclidean, normalized euclidean; raw first, then prewhitened
 * for thresholded brains: alpha = 0.05 FDR corrected across all 400 parcels
 
 #### unthresholded
@@ -241,6 +241,22 @@ stats.group %>%
   filter(measu == "neuc", norma == "raw") %>%
   build_overlay("m", template = schaefer) %>%
   plot_surface(underlay = hcp)
+
+stats.group %>%
+  filter(measu == "corr", norma == "prw") %>%
+  build_overlay("m", template = schaefer) %>%
+  plot_surface(underlay = hcp)
+
+stats.group %>%
+  filter(measu == "eucl", norma == "prw") %>%
+  build_overlay("m", template = schaefer) %>%
+  plot_surface(underlay = hcp)
+
+stats.group %>%
+  filter(measu == "neuc", norma == "prw") %>%
+  build_overlay("m", template = schaefer) %>%
+  plot_surface(underlay = hcp)
+
 
 ```
 
@@ -264,6 +280,24 @@ stats.group %>%
 stats.group %>%
   mutate(m = ifelse(p.fdr < 0.05, m, 0)) %>%
   filter(measu == "neuc", norma == "raw") %>%
+  build_overlay("m", template = schaefer) %>%
+  plot_surface(underlay = hcp)
+
+stats.group %>%
+  mutate(m = ifelse(p.fdr < 0.05, m, 0)) %>%
+  filter(measu == "corr", norma == "prw") %>%
+  build_overlay("m", template = schaefer) %>%
+  plot_surface(underlay = hcp)
+
+stats.group %>%
+  mutate(m = ifelse(p.fdr < 0.05, m, 0)) %>%
+  filter(measu == "eucl", norma == "prw") %>%
+  build_overlay("m", template = schaefer) %>%
+  plot_surface(underlay = hcp)
+ 
+stats.group %>%
+  mutate(m = ifelse(p.fdr < 0.05, m, 0)) %>%
+  filter(measu == "neuc", norma == "prw") %>%
   build_overlay("m", template = schaefer) %>%
   plot_surface(underlay = hcp)
  
