@@ -61,7 +61,7 @@ sessi.short <- "Bas"
 n.knots <- 6
 glms <- "Congruency_EVENTS_censored"
 regressors <- c("PC50InCon", "biasInCon", "PC50Con", "biasCon")
-measures <- c("corr", "eucl")
+measures <- c("corr", "eucl", "neuc")
 normalizations <- c("raw", "prw")
 rsatypes <- c("vanilla", "crossval")
 
@@ -123,7 +123,7 @@ shrinkages$lambda.run2 <- as.numeric(NA)
 
 ## loop ----
 
-n.iter <- length(sessi) * length(subjs) * length(glms) * length(parcellation$key)
+n.iter <- length(sessi) * length(subjs) * length(glms)
 pb <- progress_bar$new(
   format = " running [:bar] :percent eta: :eta (elapsed: :elapsed)",
   total = n.iter, clear = FALSE, width = 120
@@ -203,8 +203,6 @@ for (sess.i in seq_along(sessi)) {
           ## estimation ----
           
           ## compute similarities
-          
-          time.begin <- Sys.time()
 
           n.cores <- detectCores()
           cl <- makeCluster(n.cores - 1, type = "FORK")
@@ -297,10 +295,14 @@ for (sess.i in seq_along(sessi)) {
               ## vanilla RSA (includes both cross-run and within-run similarity matrices)
               
               r.vn.subj.i.roi.i[, , "corr", "raw", knot.i] <- cor(betas.ii.mat)
-              r.vn.subj.i.roi.i[, , "eucl", "raw", knot.i] <- dist2mat(betas.ii.mat) / n.vert
               r.vn.subj.i.roi.i[, , "corr", "prw", knot.i] <- cor(betas.ii.mat.w)
+              
+              r.vn.subj.i.roi.i[, , "eucl", "raw", knot.i] <- dist2mat(betas.ii.mat) / n.vert
               r.vn.subj.i.roi.i[, , "eucl", "prw", knot.i] <- dist2mat(betas.ii.mat.w) / n.vert
-
+              
+              r.vn.subj.i.roi.i[, , "neuc", "raw", knot.i] <- dist2mat(scale(betas.ii.mat)) / n.vert
+              r.vn.subj.i.roi.i[, , "neuc", "prw", knot.i] <- dist2mat(scale(betas.ii.mat.w)) / n.vert
+              
               ## now on prewhitened patterns
               
               ## TODO: cross-validated RSA
@@ -316,6 +318,8 @@ for (sess.i in seq_along(sessi)) {
           
           stopCluster(cl)
           
+          pb$tick()  ## progress bar
+          
           ## store in arrays
           
           r.vn.subj.i <- abind(r.vn.subj.i, rev.along = 0)
@@ -327,7 +331,17 @@ for (sess.i in seq_along(sessi)) {
     
     ## save ----    
     
-    saveRDS(r.vn, here("out", "rsa", paste0("rmatrix_vanilla_shaefer400_", name.sess.i, "_", name.glm.i, ".rds")))
+    for (measure.i in measures) {
+      
+      saveRDS(
+        r.vn[, , measure.i, , , , ], 
+        here("out", "rsa", paste0("rmatrix_vanilla_", measure.i, "_shaefer400_", name.sess.i, "_", name.glm.i, ".rds"))
+      )
+      
+    }
+    
+    
+    # saveRDS(r.vn, here("out", "rsa", paste0("rmatrix_vanilla_shaefer400_", name.sess.i, "_", name.glm.i, ".rds")))
     # saveRDS(r.cv, here("out", "rsa", paste0("rmatrix_crossva_shaefer400_", name.sess.i, "_", name.glm.i, ".rds")))
   
     
