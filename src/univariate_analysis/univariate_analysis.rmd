@@ -1,0 +1,212 @@
+---
+title: 'Univariate analysis'
+author: "michael freund"
+date: "3/24/2020"
+output:
+  html_document:
+    toc: true
+    highlight: zenburn
+---
+
+```{r setup, include = FALSE}
+
+knitr::opts_chunk$set(
+  cache = TRUE, echo = FALSE, warning = FALSE, message = FALSE,
+  fig.align = 'center',
+  fig.width = 11.5, fig.fullwidth = TRUE
+  )
+
+set.seed(0)
+
+library(here)
+library(magrittr)
+library(dplyr)
+library(data.table)
+library(mikeutils)
+library(lme4)
+library(ggplot2)
+# library(ggbeeswarm)
+library(grid)
+library(gridExtra)
+library(cowplot)
+library(cifti)
+library(gifti)
+# library(nifti)
+library(lme4)
+# library(lmerTest)
+
+theme_set(theme_classic(base_size = 8))
+
+## variables
+
+atlas <- read_atlas("schaefer400")
+
+nodename <- Sys.info()["nodename"]
+if (nodename == "ccplinux1") {
+  dir.atlas <- "/data/nil-external/ccp/freund/atlases"
+} else if (nodename == "CCP-FREUND") {
+  dir.atlas <- "C:/local/atlases"
+}
+
+dir.ccp.hcp <- "/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/HCP_SUBJECTS_BACKUPS/AFNI_ANALYSIS"
+dir.subsubj <- "/data/nil-external/ccp/witzermanm/AFNI_ANALYSIS_SUBSUBJECT"
+dir.results <- file.path(dir.subsubj, "RESULTS_RUNWISE")
+
+pretrial <- fread(here("data", "pretrial_behavior.csv"))
+pretrial.subjsum <- fread(here("data", "pretrial_subjsumm.csv"))
+
+subjs.analysis <- unique(pretrial.subjsum[subj.set == "analysis"]$subj)
+subjs.development <- unique(pretrial.subjsum[subj.set == "development"]$subj)
+subjs.bad <- unique(pretrial.subjsum[subj.set == "bad"]$subj)
+
+r.un <- readRDS(here("out", "rsa", paste0("means_shaefer400_baseline_Congruency_EVENTS_censored.rds")))  ## vanilla RSA
+
+subjs <- dimnames(r.un)$subj
+subjs.analysis <- intersect(subjs.analysis, subjs)
+subjs.development <- intersect(subjs.development, subjs)
+subjs.bad <- intersect(subjs.bad, subjs)
+
+r.un <- r.un[, , , , subjs.analysis]  ## HOLD OUT DATA!!!
+
+parcellation <- read_atlas("schaefer400")
+hcp <- list(
+  L  = readGIfTI(
+    file.path(dir.atlas, "surf", "HCP_S1200_GroupAvg_v1", "S1200.L.midthickness_MSMAll.32k_fs_LR.surf.gii")
+    ),
+  R = readGIfTI(
+    file.path(dir.atlas, "surf", "HCP_S1200_GroupAvg_v1", "S1200.R.midthickness_MSMAll.32k_fs_LR.surf.gii")
+    )
+)
+over <- list(
+  L = parcellation$atlas[1:(nrow(parcellation$atlas) / 2)], 
+  R = parcellation$atlas[(nrow(parcellation$atlas) / 2):nrow(parcellation$atlas)]
+  )
+
+schaefer <- list(
+  L = read_gifti2matrix(
+    "/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/ATLASES/Schaefer2018_400Parcels_7Networks_order_L.label.gii"
+    ) %>% c,
+  R = read_gifti2matrix(
+    "/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/ATLASES/Schaefer2018_400Parcels_7Networks_order_R.label.gii"
+    ) %>% c
+)
+
+
+# list.files("/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/ATLASES")
+
+```
+
+## About
+...add...
+
+## stats
+
+```{r stats}
+
+
+stats.subjs <- reshape2::melt(r.un)
+
+## remove subjs with no glm:
+
+subjs.nofit <- stats.subjs %>%
+  filter(is.na(value)) %>%
+  pull(subj) %>%
+  as.character %>%
+  unique
+
+stats.subjs %<>% filter(!subj %in% subjs.nofit)
+
+## get group-level stats ----
+# 
+# stats.subjs$trial.type <- gsub("PC50|bias", "", stats.subjs$cond)
+# stats.subjs$pc <- gsub("InCon|Con", "", stats.subjs$cond)
+# 
+# 
+# stats.subjs %>%
+#   filter(knot %in% c("knot2", "knot3")) %>%
+#   group_by(num.roi, roi, hemi, trial.type, pc, subj) %>%
+#   summarize(value = mean(value)) %>%
+#   tidyr::spread(trial.type, value) %>%
+#   mutate(value = InCon - Con) %>%
+#   summarize(
+#     p = wilcox.test(value, alternative = "greater")$p.value,
+#     w = wilcox.test(value, alternative = "greater")$statistic,
+#     m = mean(value)
+#   )
+#   group_by(trial.type, pc) %>%
+#   mutate(p.fdr = p.adjust(p, method = "fdr"))
+#   group_by(num.roi, roi, hemi, measu, norma, knot) %>%
+#   summarize(
+#     p = wilcox.test(value, alternative = "greater")$p.value,
+#     m = mean(value),
+#   )
+# 
+# 
+
+
+stats.subjs %<>%
+  filter(knot %in% c("knot2", "knot3")) %>%
+  group_by(roi, cond, run, subj) %>%
+  summarize(value = mean(value))
+
+stats.subjs$trial.type <- gsub("PC50|bias", "", stats.subjs$cond)
+stats.subjs$pc <- gsub("InCon|Con", "", stats.subjs$cond)
+
+# fit models
+
+l <- split(stats.subjs, stats.subjs$roi)
+mods <- lapply(l, function(x) lmer(value ~ pc + trial.type + (1 | subj), x))
+g <- mods %>%
+  lapply(function(x) as.data.frame(coef(summary(x)))) %>%
+  lapply(function(x) tibble::rownames_to_column(x, "param")) %>%
+  bind_rows(.id = "roi")
+g %<>% rename(m = Estimate, se = "Std. Error", t = "t value", p = "Pr(>|t|)")
+
+g$num.roi <- match(g$roi, atlas$key)
+g %<>% mutate(hemi = substr(roi, 1, 1))
+
+stats.group <- g %>%
+  group_by(roi, param) %>%
+  mutate(p.fdr = p.adjust(p, method = "fdr"))
+
+```
+
+
+## coverage
+
+
+#### unthresholded
+
+```{r coverage_unthresh}
+
+stats.group %>%
+  filter(param == "trial.typeInCon") %>%
+  build_overlay("m", template = schaefer) %>%
+  plot_surface(underlay = hcp)
+
+stats.group %>%
+  filter(param == "pcPC50") %>%
+  build_overlay("m", template = schaefer) %>%
+  plot_surface(underlay = hcp)
+
+```
+
+
+#### thresholded
+
+```{r coverage_thresh}
+
+stats.group %>%
+  mutate(m = ifelse(p.fdr < 0.05, m, 0)) %>%
+  filter(param == "trial.typeInCon") %>%
+  build_overlay("m", template = schaefer) %>%
+  plot_surface(underlay = hcp)
+
+stats.group %>%
+  mutate(m = ifelse(p.fdr < 0.05, m, 0)) %>%
+  filter(param == "pcPC50") %>%
+  build_overlay("m", template = schaefer) %>%
+  plot_surface(underlay = hcp)
+
+```
+

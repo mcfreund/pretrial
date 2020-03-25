@@ -57,15 +57,21 @@ subjs.analysis <- unique(pretrial.subjsum[subj.set == "analysis"]$subj)
 subjs.development <- unique(pretrial.subjsum[subj.set == "development"]$subj)
 subjs.bad <- unique(pretrial.subjsum[subj.set == "bad"]$subj)
 
-r.vn <- readRDS(here("out", "rsa", "rmatrix_vanilla_shaefer400.rds"))  ## vanilla RSA
+## vanilla RSA:
 
-subjs <- dimnames(r.vn)$subj
+r.vn.corr <- readRDS(here("out", "rsa", "rmatrix_vanilla_corr_shaefer400_baseline_Congruency_EVENTS_censored.rds"))
+r.vn.eucl <- readRDS(here("out", "rsa", "rmatrix_vanilla_eucl_shaefer400_baseline_Congruency_EVENTS_censored.rds"))
+r.vn.neuc <- readRDS(here("out", "rsa", "rmatrix_vanilla_neuc_shaefer400_baseline_Congruency_EVENTS_censored.rds"))
+
+subjs <- dimnames(r.vn.corr)$subj
 subjs.analysis <- intersect(subjs.analysis, subjs)
 subjs.development <- intersect(subjs.development, subjs)
 subjs.bad <- intersect(subjs.bad, subjs)
 
 # r.vn <- r.vn[, , subjs.development, , , , , , ]  ## HOLD OUT DATA!!!
-r.vn <- r.vn[, , subjs.analysis, , , , , , ]  ## HOLD OUT DATA!!!
+r.vn.corr <- r.vn.corr[, , , , , subjs.analysis]
+r.vn.eucl <- r.vn.eucl[, , , , , subjs.analysis]
+r.vn.neuc <- r.vn.neuc[, , , , , subjs.analysis]
 
 parcellation <- read_atlas("schaefer400")
 hcp <- list(
@@ -89,7 +95,6 @@ schaefer <- list(
     "/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/ATLASES/Schaefer2018_400Parcels_7Networks_order_R.label.gii"
     ) %>% c
 )
-
 
 # list.files("/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/ATLASES")
 
@@ -123,7 +128,7 @@ Denoising procedures considered:
 
 ## define models ----
 
-dnames <- dimnames(r.vn)$.row
+dnames <- dimnames(r.vn.corr)$.row
 is.incon <- grepl("InCon", dnames)
 is.congr <- grepl("PC50Con|biasCon", dnames)
 is.pc50  <- grepl("PC50", dnames)
@@ -154,13 +159,31 @@ v.incon[v.incon == -1] <- -1 / sum(v.incon == -1)
 
 ## get subject-level stats (RSA-model fits) ---
 
-stats.subjs <- apply(
-  atanh(r.vn), 
-  c("subj", "roi", "measu", "norma", "knot"),
+r.vn.corr <- atanh(r.vn.corr)
+r.vn.eucl <- -r.vn.eucl
+r.vn.neuc <- -r.vn.neuc
+
+stats.subjs.corr <- apply(
+  r.vn.corr, 
+  c("subj", "roi", "norma", "knot"),
+  function(x) x[lt] %*% v.incon
+  )
+stats.subjs.eucl <- apply(
+  r.vn.eucl, 
+  c("subj", "roi", "norma", "knot"),
+  function(x) x[lt] %*% v.incon
+  )
+stats.subjs.neuc <- apply(
+  r.vn.neuc, 
+  c("subj", "roi", "norma", "knot"),
   function(x) x[lt] %*% v.incon
   )
 
-stats.subjs <- reshape2::melt(stats.subjs)
+stats.subjs <- rbind(
+  reshape2::melt(stats.subjs.corr) %>% mutate(measu = "corr"),
+  reshape2::melt(stats.subjs.eucl) %>% mutate(measu = "eucl"),
+  reshape2::melt(stats.subjs.neuc) %>% mutate(measu = "neuc")
+)
 stats.subjs$num.roi <- match(stats.subjs$roi, atlas$key)
 stats.subjs %<>% mutate(hemi = substr(roi, 1, 1))
 
@@ -174,12 +197,12 @@ subjs.nofit <- stats.subjs %>%
 
 stats.subjs %<>% filter(!subj %in% subjs.nofit)
 
-
 ## get group-level stats ----
 
 stats.group <- stats.subjs %>%
-<<<<<<< HEAD
   filter(knot %in% c("knot2", "knot3")) %>%
+  group_by(subj, num.roi, roi,hemi, measu, norma) %>%
+  summarize(value = mean(value)) %>%
   group_by(num.roi, roi, hemi, measu, norma) %>%
   summarize(
     p = wilcox.test(value, alternative = "greater")$p.value,
@@ -188,14 +211,6 @@ stats.group <- stats.subjs %>%
   ) %>%
   group_by(measu, norma) %>%
   mutate(p.fdr = p.adjust(p, method = "fdr"))
-=======
-  group_by(num.roi, roi, hemi, measu, norma, knot) %>%
-  summarize(
-    p = wilcox.test(value, alternative = "greater")$p.value,
-    m = mean(value),
-  )
-
->>>>>>> 12e30cfa0d3d3809c528dc20c5d4707438b75b56
 
 ```
 
@@ -203,7 +218,6 @@ stats.group <- stats.subjs %>%
 
 ## coverage
 
-<<<<<<< HEAD
 * displayed on brains is RSA-model fit statistics (mean contrast)
 * average of knots 2 and 3
 * order: correlation raw, correlation prew, euclidean raw, euclidean prew
@@ -213,15 +227,8 @@ stats.group <- stats.subjs %>%
 
 ```{r coverage_unthresh}
 
-# knots <- dimnames(r.vn)$knot
-
 stats.group %>%
   filter(measu == "corr", norma == "raw") %>%
-  build_overlay("m", template = schaefer) %>%
-  plot_surface(underlay = hcp)
-
-stats.group %>%
-  filter(measu == "corr", norma == "prw") %>%
   build_overlay("m", template = schaefer) %>%
   plot_surface(underlay = hcp)
 
@@ -231,10 +238,9 @@ stats.group %>%
   plot_surface(underlay = hcp)
 
 stats.group %>%
-  filter(measu == "eucl", norma == "prw") %>%
+  filter(measu == "neuc", norma == "raw") %>%
   build_overlay("m", template = schaefer) %>%
   plot_surface(underlay = hcp)
-
 
 ```
 
@@ -243,86 +249,27 @@ stats.group %>%
 
 ```{r coverage_thresh}
 
-# knots <- dimnames(r.vn)$knot
-
 stats.group %>%
   mutate(m = ifelse(p.fdr < 0.05, m, 0)) %>%
   filter(measu == "corr", norma == "raw") %>%
   build_overlay("m", template = schaefer) %>%
   plot_surface(underlay = hcp)
-# 
-# stats.group %>%
-#   mutate(m = ifelse(p.fdr < 0.05, m, 0)) %>%
-#   filter(measu == "corr", norma == "prw") %>%
-#   build_overlay("m", template = schaefer) %>%
-#   plot_surface(underlay = hcp)
-# 
-# stats.group %>%
-#   mutate(m = ifelse(p.fdr < 0.05, m, 0)) %>%
-#   filter(measu == "eucl", norma == "raw") %>%
-#   build_overlay("m", template = schaefer) %>%
-#   plot_surface(underlay = hcp)
-# 
-# stats.group %>%
-#   mutate(m = ifelse(p.fdr < 0.05, m, 0)) %>%
-#   filter(measu == "eucl", norma == "prw") %>%
-#   build_overlay("m", template = schaefer) %>%
-#   plot_surface(underlay = hcp)
 
+stats.group %>%
+  mutate(m = ifelse(p.fdr < 0.05, m, 0)) %>%
+  filter(measu == "eucl", norma == "raw") %>%
+  build_overlay("m", template = schaefer) %>%
+  plot_surface(underlay = hcp)
+ 
+stats.group %>%
+  mutate(m = ifelse(p.fdr < 0.05, m, 0)) %>%
+  filter(measu == "neuc", norma == "raw") %>%
+  build_overlay("m", template = schaefer) %>%
+  plot_surface(underlay = hcp)
+ 
 ```
 
 
 #### comparison of test statistics
 
 
-
-=======
-```{r coverage}
-
-knots <- dimnames(r.vn)$knot
-
-for (name.knot.i in knots) {
-  
-  stats.group %>%
-    filter(measu == "corr", norma == "raw", knot == name.knot.i) %>%
-    build_overlay("m", template = schaefer) %>%
-    plot_surface(underlay = hcp)
-  
-}
-
-
-for (name.knot.i in knots) {
-  
-  stats.group %>%
-    filter(measu == "eucl", norma == "raw", knot == name.knot.i) %>%
-    build_overlay("m", template = schaefer) %>%
-    plot_surface(underlay = hcp)
-  
-}
-
-
-for (name.knot.i in knots) {
-  
-  stats.group %>%
-    filter(measu == "corr", norma == "prw", knot == name.knot.i) %>%
-    build_overlay("m", template = schaefer) %>%
-    plot_surface(underlay = hcp)
-  
-}
-
-for (name.knot.i in knots) {
-  
-  stats.group %>%
-    filter(measu == "eucl", norma == "prw", knot == name.knot.i) %>%
-    build_overlay("m", template = schaefer) %>%
-    plot_surface(underlay = hcp)
-  
-}
-
-rmarkdown::render(
-  here("exploring_similarity_measures.rmd")
-  )
-
-```
-
->>>>>>> 12e30cfa0d3d3809c528dc20c5d4707438b75b56
