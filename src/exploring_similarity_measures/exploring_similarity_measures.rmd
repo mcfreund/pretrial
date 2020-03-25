@@ -25,11 +25,7 @@ library(data.table)
 library(mikeutils)
 library(lme4)
 library(ggplot2)
-<<<<<<< HEAD
 # library(ggbeeswarm)
-=======
-library(ggbeeswarm)
->>>>>>> 12e30cfa0d3d3809c528dc20c5d4707438b75b56
 library(grid)
 library(gridExtra)
 library(cowplot)
@@ -68,12 +64,8 @@ subjs.analysis <- intersect(subjs.analysis, subjs)
 subjs.development <- intersect(subjs.development, subjs)
 subjs.bad <- intersect(subjs.bad, subjs)
 
-<<<<<<< HEAD
 # r.vn <- r.vn[, , subjs.development, , , , , , ]  ## HOLD OUT DATA!!!
 r.vn <- r.vn[, , subjs.analysis, , , , , , ]  ## HOLD OUT DATA!!!
-=======
-r.vn <- r.vn[, , subjs.development, , , , , , ]  ## HOLD OUT DATA!!!
->>>>>>> 12e30cfa0d3d3809c528dc20c5d4707438b75b56
 
 parcellation <- read_atlas("schaefer400")
 hcp <- list(
