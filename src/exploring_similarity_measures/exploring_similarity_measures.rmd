@@ -138,7 +138,7 @@ is.run2  <- grepl("run2", dnames)
 
 
 m <- diag(length(dnames))
-dimnames(m) <- dimnames(r.vn)[c(".row", ".col")]
+dimnames(m) <- dimnames(r.vn.corr)[c(".row", ".col")]
 m[] <- 0
 lt <- lower.tri(m)
 
@@ -306,4 +306,47 @@ stats.group %>%
 
 #### comparison of test statistics
 
+```{r test_stats}
+
+stats.group.wide <- stats.group %>%
+  select(roi, measu, norma, w, p.fdr, m) %>%
+  as.data.table %>%
+  dcast(roi + measu ~ norma, value.var = c("w", "p.fdr", "m")) %>%
+  mutate(
+    is.sig.raw = p.fdr_raw < 0.05,
+    is.sig.prw = p.fdr_prw < 0.05,
+    sig = ifelse(is.sig.raw & is.sig.prw, "both", ifelse(is.sig.raw, "raw", ifelse(is.sig.prw, "prw", "none")))
+  )
+
+grid.arrange(
+  
+  stats.group.wide %>%
+    filter(measu == "corr") %>%
+    ggplot(aes(w_raw, w_prw)) +
+    geom_abline() +
+    geom_point(aes(color = sig)) +
+    labs(title = "correlation") +
+    coord_cartesian(xlim = c(0, 750), ylim = c(0, 750)),
+  
+  stats.group.wide %>%
+    filter(measu == "eucl") %>%
+    ggplot(aes(w_raw, w_prw)) +
+    geom_abline() +
+    geom_point(aes(color = sig)) +
+    labs(title = "euclidean") +
+    coord_cartesian(xlim = c(0, 750), ylim = c(0, 750)),
+  
+  stats.group.wide %>%
+    filter(measu == "neuc") %>%
+    ggplot(aes(w_raw, w_prw)) +
+    geom_abline() +
+    geom_point(aes(color = sig)) +
+    labs(title = "normalized euclidean") +
+    coord_cartesian(xlim = c(0, 750), ylim = c(0, 750)),
+  
+  ncol = 3
+  
+)
+
+```
 

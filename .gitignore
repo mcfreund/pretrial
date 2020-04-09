@@ -1,8 +1,5 @@
-<<<<<<< HEAD
-out/rsa/*.RDS
-=======
->>>>>>> 12e30cfa0d3d3809c528dc20c5d4707438b75b56
-out/rsa/whitening_matrices/*
+
+out/rsa/whitening_matrices*
 
 # History files
 .Rhistory
@@ -43,7 +40,4 @@ vignettes/*.pdf
 
 # R Environment Variables
 .Renviron
-<<<<<<< HEAD
 .Rproj.user
-=======
->>>>>>> 12e30cfa0d3d3809c528dc20c5d4707438b75b56
