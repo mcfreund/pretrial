@@ -33,7 +33,7 @@ library(cifti)
 library(gifti)
 # library(nifti)
 library(lme4)
-# library(lmerTest)
+library(lmerTest)
 
 theme_set(theme_classic(base_size = 8))
 
@@ -44,8 +44,10 @@ atlas <- read_atlas("schaefer400")
 nodename <- Sys.info()["nodename"]
 if (nodename == "ccplinux1") {
   dir.atlas <- "/data/nil-external/ccp/freund/atlases"
+  dir.schaefer <- "/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/ATLASES/"
 } else if (nodename == "CCP-FREUND") {
   dir.atlas <- "C:/local/atlases"
+  dir.schaefer <- dir.atlas
 }
 
 dir.ccp.hcp <- "/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/HCP_SUBJECTS_BACKUPS/AFNI_ANALYSIS"
@@ -84,10 +86,10 @@ over <- list(
 
 schaefer <- list(
   L = read_gifti2matrix(
-    "/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/ATLASES/Schaefer2018_400Parcels_7Networks_order_L.label.gii"
+    file.path(dir.schaefer, "Schaefer2018_400Parcels_7Networks_order_L.label.gii")
     ) %>% c,
   R = read_gifti2matrix(
-    "/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/ATLASES/Schaefer2018_400Parcels_7Networks_order_R.label.gii"
+    file.path(dir.schaefer, "Schaefer2018_400Parcels_7Networks_order_R.label.gii")
     ) %>% c
 )
 
@@ -99,10 +101,10 @@ schaefer <- list(
 ## About
 ...add...
 
+
 ## stats
 
 ```{r stats}
-
 
 stats.subjs <- reshape2::melt(r.un)
 
@@ -117,55 +119,35 @@ subjs.nofit <- stats.subjs %>%
 stats.subjs %<>% filter(!subj %in% subjs.nofit)
 
 ## get group-level stats ----
-# 
-# stats.subjs$trial.type <- gsub("PC50|bias", "", stats.subjs$cond)
-# stats.subjs$pc <- gsub("InCon|Con", "", stats.subjs$cond)
-# 
-# 
-# stats.subjs %>%
-#   filter(knot %in% c("knot2", "knot3")) %>%
-#   group_by(num.roi, roi, hemi, trial.type, pc, subj) %>%
-#   summarize(value = mean(value)) %>%
-#   tidyr::spread(trial.type, value) %>%
-#   mutate(value = InCon - Con) %>%
-#   summarize(
-#     p = wilcox.test(value, alternative = "greater")$p.value,
-#     w = wilcox.test(value, alternative = "greater")$statistic,
-#     m = mean(value)
-#   )
-#   group_by(trial.type, pc) %>%
-#   mutate(p.fdr = p.adjust(p, method = "fdr"))
-#   group_by(num.roi, roi, hemi, measu, norma, knot) %>%
-#   summarize(
-#     p = wilcox.test(value, alternative = "greater")$p.value,
-#     m = mean(value),
-#   )
-# 
-# 
-
-
-stats.subjs %<>%
-  filter(knot %in% c("knot2", "knot3")) %>%
-  group_by(roi, cond, run, subj) %>%
-  summarize(value = mean(value))
 
 stats.subjs$trial.type <- gsub("PC50|bias", "", stats.subjs$cond)
 stats.subjs$pc <- gsub("InCon|Con", "", stats.subjs$cond)
 
-# fit models
+## main effects: pc and trial.types
 
-l <- split(stats.subjs, stats.subjs$roi)
-mods <- lapply(l, function(x) lmer(value ~ pc + trial.type + (1 | subj), x))
-g <- mods %>%
+l.me <- split(stats.subjs, interaction(stats.subjs$roi, stats.subjs$knot))
+mods.me <- lapply(l.me, function(x) lmer(value ~ pc + trial.type + (1 | subj), x))
+stats.group.me <- mods.me %>%
   lapply(function(x) as.data.frame(coef(summary(x)))) %>%
   lapply(function(x) tibble::rownames_to_column(x, "param")) %>%
-  bind_rows(.id = "roi")
-g %<>% rename(m = Estimate, se = "Std. Error", t = "t value", p = "Pr(>|t|)")
+  bind_rows(.id = "roi.knot") %>%
+  bind_cols(reshape2::colsplit(.$roi.knot, "\\.", c("roi", "knot")))
+stats.group.me %<>% rename(m = Estimate, se = "Std. Error", t = "t value", p = "Pr(>|t|)")
 
-g$num.roi <- match(g$roi, atlas$key)
-g %<>% mutate(hemi = substr(roi, 1, 1))
+l.x <- split(stats.subjs, interaction(stats.subjs$roi, stats.subjs$knot))
+mods.x <- lapply(l.x, function(x) lmer(value ~ pc * trial.type + (1 | subj), x))
+stats.group.x <- mods.x %>%
+  lapply(function(x) as.data.frame(coef(summary(x)))) %>%
+  lapply(function(x) tibble::rownames_to_column(x, "param")) %>%
+  bind_rows(.id = "roi.knot") %>%
+  bind_cols(reshape2::colsplit(.$roi.knot, "\\.", c("roi", "knot")))
+stats.group.x %<>% rename(m = Estimate, se = "Std. Error", t = "t value", p = "Pr(>|t|)")
 
-stats.group <- g %>%
+stats.group <- rbind(stats.group.me, stats.group.x)
+
+stats.group$num.roi <- match(stats.group$roi, atlas$key)
+stats.group %<>% mutate(hemi = substr(roi, 1, 1))
+stats.group %<>%
   group_by(roi, param) %>%
   mutate(p.fdr = p.adjust(p, method = "fdr"))
 
@@ -177,36 +159,102 @@ stats.group <- g %>%
 
 #### unthresholded
 
-```{r coverage_unthresh}
+##### trial-type
 
-stats.group %>%
-  filter(param == "trial.typeInCon") %>%
-  build_overlay("m", template = schaefer) %>%
-  plot_surface(underlay = hcp)
+```{r coverage_unthresh_trialtype}
 
-stats.group %>%
-  filter(param == "pcPC50") %>%
-  build_overlay("m", template = schaefer) %>%
-  plot_surface(underlay = hcp)
+for (name.knot.i in unique(stats.group$knot)) {
+  
+  stats.group %>%
+    filter(param == "trial.typeInCon", knot == name.knot.i) %>%
+    build_overlay("m", template = schaefer) %>%
+    plot_surface(underlay = hcp)
+  
+}
+
+```
+
+##### pc
+
+```{r coverage_unthresh_pc}
+
+for (name.knot.i in unique(stats.group$knot)) {
+  
+  stats.group %>%
+    filter(param == "pcPC50", knot == name.knot.i) %>%
+    build_overlay("m", template = schaefer) %>%
+    plot_surface(underlay = hcp)
+  
+}
+
+```
+
+##### trial-type\*pc
+
+```{r coverage_unthresh_interaction}
+
+for (name.knot.i in unique(stats.group$knot)) {
+  
+  stats.group %>%
+    filter(param == "pcPC50:trial.typeInCon", knot == name.knot.i) %>%
+    build_overlay("m", template = schaefer) %>%
+    plot_surface(underlay = hcp)
+  
+}
 
 ```
 
 
+
 #### thresholded
 
-```{r coverage_thresh}
+##### trial-type
 
-stats.group %>%
-  mutate(m = ifelse(p.fdr < 0.05, m, 0)) %>%
-  filter(param == "trial.typeInCon") %>%
-  build_overlay("m", template = schaefer) %>%
-  plot_surface(underlay = hcp)
+```{r coverage_thresh_trialtype}
 
-stats.group %>%
-  mutate(m = ifelse(p.fdr < 0.05, m, 0)) %>%
-  filter(param == "pcPC50") %>%
-  build_overlay("m", template = schaefer) %>%
-  plot_surface(underlay = hcp)
+for (name.knot.i in unique(stats.group$knot)) {
+  
+  stats.group %>%
+    mutate(m = ifelse(p.fdr < 0.05, m, 0)) %>%
+    filter(param == "trial.typeInCon", knot == name.knot.i) %>%
+    build_overlay("m", template = schaefer) %>%
+    plot_surface(underlay = hcp)
+  
+}
+
+```
+
+
+##### pc
+
+```{r coverage_thresh_pc}
+
+for (name.knot.i in unique(stats.group$knot)) {
+  
+  stats.group %>%
+    mutate(m = ifelse(p.fdr < 0.05, m, 0)) %>%
+    filter(param == "pcPC50", knot == name.knot.i) %>%
+    build_overlay("m", template = schaefer) %>%
+    plot_surface(underlay = hcp)
+  
+}
+
+```
+
+
+##### trial-type\*pc
+
+```{r coverage_thresh_interaction}
+
+for (name.knot.i in unique(stats.group$knot)) {
+  
+  stats.group %>%
+    mutate(m = ifelse(p.fdr < 0.05, m, 0)) %>%
+    filter(param == "pcPC50:trial.typeInCon", knot == name.knot.i) %>%
+    build_overlay("m", template = schaefer) %>%
+    plot_surface(underlay = hcp)
+  
+}
 
 ```
 

@@ -50,75 +50,30 @@ is_equal <- function(x, y, tol = .Machine$double.eps^0.5) {
 parcellation <- read_atlas("schaefer400")
 
 dir.ccp.hcp <- "/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/HCP_SUBJECTS_BACKUPS/AFNI_ANALYSIS"
-dir.subsubj <- "/data/nil-external/ccp/witzermanm/AFNI_ANALYSIS_SUBSUBJECT"
-dir.results <- file.path(dir.subsubj, "RESULTS_RUNWISE")
+# dir.subsubj <- "/data/nil-external/ccp/witzermanm/AFNI_ANALYSIS_SUBSUBJECT"
+dir.subsubj <- "/data/nil-external/ccp/freund/sub-subj-glms/"
+# dir.results <- file.path(dir.subsubj, "RESULTS_RUNWISE")
+dir.analysis <- file.path(dir.subsubj, "runwise_old")
 
-subjs <- list.dirs(dir.results, recursive = FALSE, full.names = FALSE)
-# sessi <- c("baseline", "proactive", "reactive")
-# sessi.short <- c("Bas", "Pro", "Rea")
-sessi <- "baseline"
-sessi.short <- "Bas"
-n.knots <- 6
-glms <- "Congruency_EVENTS_censored"
+subjs <- list.dirs(dir.analysis, recursive = FALSE, full.names = FALSE)
+sessi <- c("baseline", "proactive")
+sessi.short <- c("Bas", "proactive")
+glms <- c("Congruency_EVENTS_censored", "Congruency_EVENTS_tentzero01210_censored")
+n.knots <- setNames(c(6, 8), glms)
 regressors <- c("PC50InCon", "biasInCon", "PC50Con", "biasCon")
 measures <- c("corr", "eucl", "neuc")
 normalizations <- c("raw", "prw")
 rsatypes <- c("vanilla", "crossval")
 
 
-## initialize arrays
-
-.r.vn <- array(
-  NA,
-  dim = c(
-    .row   = length(regressors) * 2,
-    .col   = length(regressors) * 2,
-    measu  = length(measures),
-    norma  = length(normalizations),
-    knot   = n.knots,
-    roi    = length(parcellation$key), 
-    subj   = length(subjs)
-  ),
-  dimnames = list(
-    .row   = combo_paste(regressors, c("run1", "run2")),
-    .col   = combo_paste(regressors, c("run1", "run2")),
-    measu  = measures,
-    norma  = normalizations,
-    knot   = paste0("knot", seq_len(n.knots)),
-    roi    = parcellation$key, 
-    subj   = subjs
-  )
-)
-
-.r.cv <- array(
-  NA,
-  dim = c(
-    .row   = length(regressors),
-    .col   = length(regressors),
-    measu  = length(measures),
-    norma  = length(normalizations),
-    knot   = n.knots,
-    roi    = length(parcellation$key), 
-    subj   = length(subjs)
-  ),
-  dimnames = list(
-    .row   = regressors,
-    .col   = regressors,
-    measu  = measures,
-    norma  = normalizations,
-    knot   = paste0("knot", seq_len(n.knots)),
-    roi    = parcellation$key, 
-    subj   = subjs
-  )
-)
-
 ## for tallying unresponsive voxels
-counts.silent <- as.data.table(expand.grid(subj = subjs, session = sessi, glm = glms, roi = parcellation$key))
-counts.silent$n <- as.numeric(NA)
+# counts.silent <- as.data.table(expand.grid(subj = subjs, session = sessi, glm = glms, roi = parcellation$key))
+# counts.silent$n <- as.numeric(NA)
 
-shrinkages <- as.data.table(expand.grid(subj = subjs, session = sessi, glm = glms, roi = parcellation$key))
-shrinkages$lambda.run1 <- as.numeric(NA)
-shrinkages$lambda.run2 <- as.numeric(NA)
+## for saving estimated shrinkage factors
+# shrinkages <- as.data.table(expand.grid(subj = subjs, session = sessi, glm = glms, roi = parcellation$key))
+# shrinkages$lambda.run1 <- as.numeric(NA)
+# shrinkages$lambda.run2 <- as.numeric(NA)
 
 
 ## loop ----
@@ -137,10 +92,53 @@ for (sess.i in seq_along(sessi)) {
 
   for (name.glm.i in glms) {
     # name.glm.i <- glms[1]
-  
-    r.vn <- .r.vn  ## copy empty arrays
-    r.cv <- .r.cv
-     
+    
+    ## initialize arrays
+    
+    r.vn <- array(
+      NA,
+      dim = c(
+        .row   = length(regressors) * 2,
+        .col   = length(regressors) * 2,
+        measu  = length(measures),
+        norma  = length(normalizations),
+        knot   = n.knots[name.glm.i],
+        roi    = length(parcellation$key), 
+        subj   = length(subjs)
+      ),
+      dimnames = list(
+        .row   = combo_paste(regressors, c("run1", "run2")),
+        .col   = combo_paste(regressors, c("run1", "run2")),
+        measu  = measures,
+        norma  = normalizations,
+        knot   = paste0("knot", seq_len(n.knots[name.glm.i])),
+        roi    = parcellation$key, 
+        subj   = subjs
+      )
+    )
+    
+    r.cv <- array(
+      NA,
+      dim = c(
+        .row   = length(regressors),
+        .col   = length(regressors),
+        measu  = length(measures),
+        norma  = length(normalizations),
+        knot   = n.knots[name.glm.i],
+        roi    = length(parcellation$key), 
+        subj   = length(subjs)
+      ),
+      dimnames = list(
+        .row   = regressors,
+        .col   = regressors,
+        measu  = measures,
+        norma  = normalizations,
+        knot   = paste0("knot", seq_len(n.knots[name.glm.i])),
+        roi    = parcellation$key, 
+        subj   = subjs
+      )
+    )
+
       for (subj.i in seq_along(subjs)) {
         ## subj.i = 1
         
@@ -148,7 +146,10 @@ for (sess.i in seq_along(sessi)) {
         
         ## read data ----
         
-          dirs <- file.path(dir.results, name.subj.i, "Stroop", name.sess.i, paste0(name.sess.i, "_", name.glm.i))
+        dirs <- file.path(
+          dir.analysis, name.subj.i, "RESULTS", "Stroop", name.sess.i, paste0(name.sess.i, "_", name.glm.i)
+        )
+        
           
           betas <- vector("list", 4) %>% setNames(combo_paste(c("run1", "run2"), c("L", "R")))
           resid <- betas
@@ -222,10 +223,10 @@ for (sess.i in seq_along(sessi)) {
             betas.i <- betas.i[, !is.silent, ]
             resid.i <- resid.i[, !is.silent, ]
             
-            counts.silent[
-              subj == name.subj.i & session == name.sess.i & glm == name.glm.i & roi == name.roi.i,
-              "n"
-              ] <- sum(is.silent)  ## tally
+            # counts.silent[
+            #   subj == name.subj.i & session == name.sess.i & glm == name.glm.i & roi == name.roi.i,
+            #   "n"
+            #   ] <- sum(is.silent)  ## tally
             
             n.vert <- ncol(betas.i)  ## number vertices
             
@@ -236,18 +237,18 @@ for (sess.i in seq_along(sessi)) {
                 .col   = length(regressors) * 2,
                 measu  = length(measures),
                 norma  = length(normalizations),
-                knot   = n.knots
+                knot   = n.knots[name.glm.i]
               ),
               dimnames = list(
                 .row   = combo_paste(regressors, c("run1", "run2")),
                 .col   = combo_paste(regressors, c("run1", "run2")),
                 measu  = measures,
                 norma  = normalizations,
-                knot   = paste0("knot", seq_len(n.knots))
+                knot   = paste0("knot", seq_len(n.knots[name.glm.i]))
               )
             )
             
-            for (knot.i in seq_len(n.knots)) {
+            for (knot.i in seq_len(n.knots[name.glm.i])) {
               # knot.i = 1
               
               ## extract knot
@@ -276,8 +277,8 @@ for (sess.i in seq_along(sessi)) {
               } else {
                 
                 whitened <- list(
-                  run1 = whitening(resid.i[, , 1]),
-                  run2 = whitening(resid.i[, , 2])
+                  run1 = whitening(resid.i[, , 1], shrinkage = 0.4),
+                  run2 = whitening(resid.i[, , 2], shrinkage = 0.4)
                 )
                 
                 saveRDS(whitened, fname.mahal)
@@ -302,8 +303,6 @@ for (sess.i in seq_along(sessi)) {
               
               r.vn.subj.i.roi.i[, , "neuc", "raw", knot.i] <- dist2mat(scale(betas.ii.mat)) / n.vert
               r.vn.subj.i.roi.i[, , "neuc", "prw", knot.i] <- dist2mat(scale(betas.ii.mat.w)) / n.vert
-              
-              ## now on prewhitened patterns
               
               ## TODO: cross-validated RSA
               ## each measure: corrleation, euclidean

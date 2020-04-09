@@ -1,7 +1,7 @@
 ## about ----
+## reads betas from runwise GLMS, calculates parcel-wise means, writes stats as RDS files.
 ## 
-## 
-## mike freund, 2020-02-19
+## mike freund, 09 April 2020
 
 
 ## setup ----
@@ -23,36 +23,52 @@ library(doParallel)
 parcellation <- read_atlas("schaefer400")
 
 dir.ccp.hcp <- "/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/HCP_SUBJECTS_BACKUPS/AFNI_ANALYSIS"
-dir.subsubj <- "/data/nil-external/ccp/witzermanm/AFNI_ANALYSIS_SUBSUBJECT"
-dir.results <- file.path(dir.subsubj, "RESULTS_RUNWISE")
+dir.subsubj <- "/data/nil-external/ccp/freund/sub-subj-glms/"
+dir.analysis <- file.path(dir.subsubj, "runwise_old")
 
-subjs <- list.dirs(dir.results, recursive = FALSE, full.names = FALSE)
-# sessi <- c("baseline", "proactive", "reactive")
-# sessi.short <- c("Bas", "Pro", "Rea")
-sessi <- "baseline"
-sessi.short <- "Bas"
-n.knots <- 6
-glms <- "Congruency_EVENTS_censored"
+subjs <- list.dirs(dir.analysis, recursive = FALSE, full.names = FALSE)
+sessi <- c("baseline", "proactive")
+sessi.short <- c("Bas", "proactive")
+glms <- c("Congruency_EVENTS_censored", "Congruency_EVENTS_tentzero01210_censored")
+n.knots <- setNames(c(6, 8), glms)
 regressors <- c("PC50InCon", "biasInCon", "PC50Con", "biasCon")
 
 
 ## initialize arrays
-
-.r.un <- array(
-  NA,
-  dim = c(
-    cond   = length(regressors),
-    run    = 2,
-    knot   = n.knots,
-    roi    = length(parcellation$key), 
-    subj   = length(subjs)
+.r.un <- list(
+  Congruency_EVENTS_censored = array(
+    NA,
+    dim = c(
+      cond   = length(regressors),
+      run    = 2,
+      knot   = n.knots["Congruency_EVENTS_censored"],
+      roi    = length(parcellation$key), 
+      subj   = length(subjs)
+    ),
+    dimnames = list(
+      cond   = regressors,
+      run    = c("run1", "run2"),
+      knot   = paste0("knot", seq_len(n.knots["Congruency_EVENTS_censored"])),
+      roi    = parcellation$key, 
+      subj   = subjs
+    )
   ),
-  dimnames = list(
-    cond   = regressors,
-    run    = c("run1", "run2"),
-    knot   = paste0("knot", seq_len(n.knots)),
-    roi    = parcellation$key, 
-    subj   = subjs
+  Congruency_EVENTS_tentzero01210_censored = array(
+    NA,
+    dim = c(
+      cond   = length(regressors),
+      run    = 2,
+      knot   = n.knots["Congruency_EVENTS_tentzero01210_censored"],
+      roi    = length(parcellation$key), 
+      subj   = length(subjs)
+    ),
+    dimnames = list(
+      cond   = regressors,
+      run    = c("run1", "run2"),
+      knot   = paste0("knot", seq_len(n.knots["Congruency_EVENTS_tentzero01210_censored"])),
+      roi    = parcellation$key, 
+      subj   = subjs
+    )
   )
 )
 
@@ -72,9 +88,9 @@ for (sess.i in seq_along(sessi)) {
   name.sess.i <- sessi[sess.i]
   
   for (name.glm.i in glms) {
-    # name.glm.i <- glms[1]
+    # name.glm.i <- glms[2]
     
-    r.un <- .r.un  ## copy empty arrays
+    r.un <- .r.un[[name.glm.i]]  ## copy empty arrays
     
     for (subj.i in seq_along(subjs)) {
       ## subj.i = 1
@@ -83,7 +99,9 @@ for (sess.i in seq_along(sessi)) {
       
       ## read data ----
       
-      dirs <- file.path(dir.results, name.subj.i, "Stroop", name.sess.i, paste0(name.sess.i, "_", name.glm.i))
+      dirs <- file.path(
+        dir.analysis, name.subj.i, "RESULTS", "Stroop", name.sess.i, paste0(name.sess.i, "_", name.glm.i)
+        )
       
       betas <- vector("list", 4) %>% setNames(combo_paste(c("run1", "run2"), c("L", "R")))
 
@@ -113,23 +131,22 @@ for (sess.i in seq_along(sessi)) {
       }
       
       ## wrangle
-      
+
       betas <- abind(
         run1 = cbind(betas[["run1_L"]], betas[["run1_R"]]),
         run2 = cbind(betas[["run2_L"]], betas[["run2_L"]]),
         rev.along = 0
       )
-      
-      
+
       ## estimation ----
       
-      for(roi.i in seq_along(parcellation$key)) {
+      for (roi.i in seq_along(parcellation$key)) {
         # roi.i = 1
         
         name.roi.i <- parcellation$key[roi.i]
         betas.i <- betas[, parcellation$atlas == roi.i, ]
-        
-        for (knot.i in seq_len(n.knots)) {
+
+        for (knot.i in seq_len(n.knots[name.glm.i])) {
           # knot.i = 1
           
           ## extract knot
