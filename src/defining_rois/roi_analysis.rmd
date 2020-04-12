@@ -25,55 +25,196 @@ library(data.table)
 library(mikeutils)
 library(lme4)
 library(ggplot2)
-# library(ggbeeswarm)
+library(ggbeeswarm)
 library(grid)
 library(gridExtra)
 library(cowplot)
 library(cifti)
 library(gifti)
-# library(nifti)
+library(abind)
+
+## settings ----
 
 theme_set(theme_classic(base_size = 8))
 
-## variables
 
-atlas <- read_atlas("schaefer400")
+## data ----
 
-nodename <- Sys.info()["nodename"]
-if (nodename == "ccplinux1") {
-  dir.atlas <- "/data/nil-external/ccp/freund/atlases"
-} else if (nodename == "CCP-FREUND") {
-  dir.atlas <- "C:/local/atlases"
-}
-
-dir.ccp.hcp <- "/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/HCP_SUBJECTS_BACKUPS/AFNI_ANALYSIS"
-dir.subsubj <- "/data/nil-external/ccp/witzermanm/AFNI_ANALYSIS_SUBSUBJECT"
-dir.results <- file.path(dir.subsubj, "RESULTS_RUNWISE")
+## behavior and events
 
 pretrial <- fread(here("data", "pretrial_behavior.csv"))
 pretrial.subjsum <- fread(here("data", "pretrial_subjsumm.csv"))
+
+## parcel-wise means
+
+means.1tr1knot <- abind(
+  readRDS(here("out", "rsa", "means_shaefer400_baseline_Congruency_EVENTS_tentzero01210_censored.rds")),
+  readRDS(here("out", "rsa", "means_shaefer400_proactive_Congruency_EVENTS_tentzero01210_censored.rds")),
+  rev.along = 0
+)
+names(dimnames(means.1tr1knot)) <- c("param", "run", "knot", "parcel", "subj", "session")
+dimnames(means.1tr1knot)$session <- c("baseline", "proactive")
+
+means.2tr1knot <- abind(
+  readRDS(here("out", "rsa", "means_shaefer400_baseline_Congruency_EVENTS_censored.rds")),
+  readRDS(here("out", "rsa", "means_shaefer400_proactive_Congruency_EVENTS_censored.rds")),
+  rev.along = 0
+)
+names(dimnames(means.2tr1knot)) <- c("param", "run", "knot", "parcel", "subj", "session")
+dimnames(means.2tr1knot)$session <- c("baseline", "proactive")
+
+## parcel-wise similarity matrices
+
+## vanilla RSA
+
+vanil.2tr1knot <- abind(
+  abind(
+    readRDS(here("out", "rsa", "rmatrix_vanilla_corr_shaefer400_baseline_Congruency_EVENTS_censored.rds")),
+    readRDS(here("out", "rsa", "rmatrix_vanilla_corr_shaefer400_proactive_Congruency_EVENTS_censored.rds")),
+    rev.along = 0
+  ),
+  -abind(
+    readRDS(here("out", "rsa", "rmatrix_vanilla_eucl_shaefer400_baseline_Congruency_EVENTS_censored.rds")),
+    readRDS(here("out", "rsa", "rmatrix_vanilla_eucl_shaefer400_proactive_Congruency_EVENTS_censored.rds")),
+    rev.along = 0
+  ),
+  -abind(
+    readRDS(here("out", "rsa", "rmatrix_vanilla_neuc_shaefer400_baseline_Congruency_EVENTS_censored.rds")),
+    readRDS(here("out", "rsa", "rmatrix_vanilla_neuc_shaefer400_proactive_Congruency_EVENTS_censored.rds")),
+    rev.along = 0
+  ),
+  rev.along = 0
+)
+
+names(dimnames(vanil.2tr1knot)) <- c(".row", ".col", "norma", "knot", "parcel", "subj", "session", "measure")
+dimnames(vanil.2tr1knot)$session <- c("baseline", "proactive")
+dimnames(vanil.2tr1knot)$measure <- c("corr", "neg.eucl", "neg.neuc")
+
+vanil.1tr1knot <- abind(
+  abind(
+    readRDS(here("out", "rsa", "rmatrix_vanilla_corr_shaefer400_baseline_Congruency_EVENTS_tentzero01210_censored.rds")),
+    readRDS(here("out", "rsa", "rmatrix_vanilla_corr_shaefer400_proactive_Congruency_EVENTS_tentzero01210_censored.rds")),
+    rev.along = 0
+  ),
+  -abind(
+    readRDS(here("out", "rsa", "rmatrix_vanilla_eucl_shaefer400_baseline_Congruency_EVENTS_tentzero01210_censored.rds")),
+    readRDS(here("out", "rsa", "rmatrix_vanilla_eucl_shaefer400_proactive_Congruency_EVENTS_tentzero01210_censored.rds")),
+    rev.along = 0
+  ),
+  -abind(
+    readRDS(here("out", "rsa", "rmatrix_vanilla_neuc_shaefer400_baseline_Congruency_EVENTS_tentzero01210_censored.rds")),
+    readRDS(here("out", "rsa", "rmatrix_vanilla_neuc_shaefer400_proactive_Congruency_EVENTS_tentzero01210_censored.rds")),
+    rev.along = 0
+  ),
+  rev.along = 0
+)
+
+names(dimnames(vanil.1tr1knot)) <- c(".row", ".col", "norma", "knot", "parcel", "subj", "session", "measure")
+dimnames(vanil.1tr1knot)$session <- c("baseline", "proactive")
+dimnames(vanil.1tr1knot)$measure <- c("corr", "neg.eucl", "neg.neuc")
+
+
+# vanil.2tr1knot.d <- reshape2::melt(vanil.2tr1knot, value.name = "m") %>% mutate(glm = "2tr1knot")
+# vanil.1tr1knot.d <- reshape2::melt(vanil.1tr1knot, value.name = "m") %>% mutate(glm = "1tr1knot")
+# vanil.2tr1knot.d$tr <- as.numeric(gsub("knot", "", means.2tr1knot.d$knot)) * 2  ## knots to TRs
+# vanil.1tr1knot.d$tr <- as.numeric(gsub("knot", "", means.1tr1knot.d$knot))
+# vanil.d <- rbind(means.2tr1knot.d, means.1tr1knot.d)  ## bind different glms
+# vanil.d$network <- ""  ## add networks
+# for (network.i in networks) means.d$network[grepl(network.i, means.d$parcel)] <- network.i
+
+## variables ----
+
+networks <- c("Vis", "DorsAttn", "SalVentAttn", "Cont", "Default", "SomMot", "Limbic")
+
+## get subj lists
 
 subjs.analysis <- unique(pretrial.subjsum[subj.set == "analysis"]$subj)
 subjs.development <- unique(pretrial.subjsum[subj.set == "development"]$subj)
 subjs.bad <- unique(pretrial.subjsum[subj.set == "bad"]$subj)
 
-## vanilla RSA:
+## filter by those with data
 
-r.vn.corr <- readRDS(here("out", "rsa", "rmatrix_vanilla_corr_shaefer400_baseline_Congruency_EVENTS_censored.rds"))
-r.vn.eucl <- readRDS(here("out", "rsa", "rmatrix_vanilla_eucl_shaefer400_baseline_Congruency_EVENTS_censored.rds"))
-r.vn.neuc <- readRDS(here("out", "rsa", "rmatrix_vanilla_neuc_shaefer400_baseline_Congruency_EVENTS_censored.rds"))
+has.stats <- apply(means.2tr1knot, "subj", function(.) !any(is.na(c(.))))
+subjs.with.stats <- names(has.stats)[has.stats]
 
-subjs <- dimnames(r.vn.corr)$subj
-subjs.analysis <- intersect(subjs.analysis, subjs)
-subjs.development <- intersect(subjs.development, subjs)
-subjs.bad <- intersect(subjs.bad, subjs)
+## TODO
+## these subjects do not have stats
+# setdiff(c(subjs.analysis, subjs.development), subjs.with.stats)
+## could be due to
+##  - no 3d+t gifti -> have RAs run
+##  - no beta gifti -> diagnose problem and fit
 
-# r.vn <- r.vn[, , subjs.development, , , , , , ]  ## HOLD OUT DATA!!!
-r.vn.corr <- r.vn.corr[, , , , , subjs.analysis]
-r.vn.eucl <- r.vn.eucl[, , , , , subjs.analysis]
-r.vn.neuc <- r.vn.neuc[, , , , , subjs.analysis]
+subjs.analysis <- intersect(subjs.analysis, subjs.with.stats)
+subjs.development <- intersect(subjs.development, subjs.with.stats)
+subjs.bad <- intersect(subjs.bad, subjs.with.stats)
+
+## subset data
+
+means.2tr1knot <- means.2tr1knot[, ,  , , subjs.analysis, ]
+means.1tr1knot <- means.1tr1knot[, ,  , , subjs.analysis, ]
+
+vanil.2tr1knot <- vanil.2tr1knot[, , , , , subjs.analysis, , ]
+vanil.1tr1knot <- vanil.1tr1knot[, , , , , subjs.analysis, , ]
+
+## rsa models
+
+dnames <- dimnames(vanil.2tr1knot)$.row
+m <- diag(length(dnames))
+dimnames(m) <- dimnames(vanil.2tr1knot)[c(".row", ".col")]
+m[] <- 0
+lt <- lower.tri(m)
+
+is.incon <- grepl("InCon", dnames)
+is.congr <- grepl("PC50Con|biasCon", dnames)
+is.pc50  <- grepl("PC50", dnames)
+is.bias  <- grepl("bias", dnames)
+is.run1  <- grepl("run1", dnames)
+is.run2  <- grepl("run2", dnames)
+
+m.incon <- m
+m.congr <- m
+m.pc50 <- m
+m.bias <- m
+m.bias.any <- m
+m.run <- m
+m.ond <- m
+m.offd <- m
+
+m.incon[is.incon, is.incon] <- 1
+m.congr[is.congr, is.congr] <- 1
+m.pc50[is.pc50, is.pc50] <- 1
+m.bias.any[is.bias, ] <- 1
+m.bias.any[, is.bias] <- 1
+m.bias[is.bias, is.bias] <- 1
+m.run[is.run1, is.run1] <- 1
+m.run[is.run2, is.run2] <- 1
+diag(m.ond[is.run1, is.run2]) <- 1
+diag(m.ond[is.run2, is.run1]) <- 1
+m.offd <- 1 - m.ond
+diag(m.offd) <- 0
+
+mlist <- list(m.incon, m.congr, m.pc50, m.bias, m.bias.any, m.run, m.ond, m.offd)
+names(mlist) <- c("incon", "congr", "pc50", "bias", "bias.any", "run", "ond", "offd")
+
+rm(m.incon, m.congr, m.pc50, m.bias, m.bias.any, m.run, m.ond, m.offd)
+
+
+## atlases ----
+
+# list.files("/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/ATLASES")
 
 parcellation <- read_atlas("schaefer400")
+
+nodename <- Sys.info()["nodename"]
+if (nodename == "ccplinux1") {
+  dir.atlas <- "/data/nil-external/ccp/freund/atlases"
+  dir.schaefer <- "/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/ATLASES/"
+} else if (nodename == "CCP-FREUND") {
+  dir.atlas <- "C:/local/atlases"
+  dir.schaefer <- dir.atlas
+}
+
+
 hcp <- list(
   L  = readGIfTI(
     file.path(dir.atlas, "surf", "HCP_S1200_GroupAvg_v1", "S1200.L.midthickness_MSMAll.32k_fs_LR.surf.gii")
@@ -82,228 +223,633 @@ hcp <- list(
     file.path(dir.atlas, "surf", "HCP_S1200_GroupAvg_v1", "S1200.R.midthickness_MSMAll.32k_fs_LR.surf.gii")
     )
 )
+
 over <- list(
   L = parcellation$atlas[1:(nrow(parcellation$atlas) / 2)], 
   R = parcellation$atlas[(nrow(parcellation$atlas) / 2):nrow(parcellation$atlas)]
   )
 
-schaefer <- list(
-  L = read_gifti2matrix(
-    "/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/ATLASES/Schaefer2018_400Parcels_7Networks_order_L.label.gii"
-    ) %>% c,
-  R = read_gifti2matrix(
-    "/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/ATLASES/Schaefer2018_400Parcels_7Networks_order_R.label.gii"
-    ) %>% c
-)
-
-# list.files("/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/ATLASES")
+# schaefer <- list(
+#   L = read_gifti2matrix(
+#     "/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/ATLASES/Schaefer2018_400Parcels_7Networks_order_L.label.gii"
+#     ) %>% c,
+#   R = read_gifti2matrix(
+#     "/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/ATLASES/Schaefer2018_400Parcels_7Networks_order_R.label.gii"
+#     ) %>% c
+# )
 
 ```
 
-## About
+# About
 
-Goal of this analysis is to compare measures of similarity and denoising procedures in their performance.
+# Univariate
 
-Performance criteria for include sensitivity (anatomical coverage), effect sizes (RSA-model fit), and pattern reliability (cross-run correlation).
-
-To mitigate overfitting, these analyses are conducted in a set of subjects that will be held-out from the "hypothesis-testing" set used for the main analyses.
-
-Similarity measures considered:
-
-* Pearson's correlation coefficient
-* Euclidean distance (negated)
-
-Denoising procedures considered:
-
-* "Raw", i.e., untransformed beta estimates
-* Spatially pre-whitened beta estimates
-  * using residual covariance matrix
-  * shrunken towards diagonal via Ledoit-Wolfe (sp?) procedure
-  * averaged across runs for single whitening matrix
-  * sqrt-ed and applied to each beta vector separately
-
-## stats
-
-```{r stats}
-
-## define models ----
-
-dnames <- dimnames(r.vn.corr)$.row
-is.incon <- grepl("InCon", dnames)
-is.congr <- grepl("PC50Con|biasCon", dnames)
-is.pc50  <- grepl("PC50", dnames)
-is.bias  <- grepl("bias", dnames)
-is.run1  <- grepl("run1", dnames)
-is.run2  <- grepl("run2", dnames)
+## Stats
 
 
-m <- diag(length(dnames))
-dimnames(m) <- dimnames(r.vn)[c(".row", ".col")]
-m[] <- 0
-lt <- lower.tri(m)
+```{r means_stats_prep}
 
-m.incon <- m
-m.incon[is.incon, is.incon] <- 1
-m.incon[is.congr, is.congr] <- 0
-m.incon[is.congr, is.incon] <- -1
-m.incon[is.incon, is.congr] <- -1
-m.incon[is.run1, is.run1] <- 0
-m.incon[is.run2, is.run2] <- 0
+## to data.frames
 
-qcor(m.incon, .title = "cross-run incongruency model")
+means.2tr1knot.d <- reshape2::melt(means.2tr1knot, value.name = "m") %>% mutate(glm = "2tr1knot")
+means.1tr1knot.d <- reshape2::melt(means.1tr1knot, value.name = "m") %>% mutate(glm = "1tr1knot")
 
-v.incon <- m.incon[lt]
-v.incon[v.incon == 1] <- 1 / sum(v.incon == 1)
-v.incon[v.incon == -1] <- -1 / sum(v.incon == -1)
+means.2tr1knot.d$tr <- as.numeric(gsub("knot", "", means.2tr1knot.d$knot)) * 2  ## knots to TRs
+means.1tr1knot.d$tr <- as.numeric(gsub("knot", "", means.1tr1knot.d$knot))
+means.d <- rbind(means.2tr1knot.d, means.1tr1knot.d)  ## bind different glms
+
+means.d$network <- ""  ## add networks
+for (network.i in networks) means.d$network[grepl(network.i, means.d$parcel)] <- network.i
+
+# means.d$seconds <- means.d$tr * 1.2
+
+means.d$trial.type <- gsub("PC50|bias", "", means.d$param)
+means.d$pc <- gsub("InCon|Con", "", means.d$param)
+
+means.d$run <- factor(means.d$run, levels = c("run1", "run2"))
+means.d$trial.type <- factor(means.d$trial.type, levels = c("Con", "InCon"))
+means.d$pc <- factor(means.d$pc, levels = c("PC50", "bias"))
+means.d$session <- factor(means.d$session, levels = c("baseline", "proactive"))
+
+```
 
 
-## get subject-level stats (RSA-model fits) ---
+```{r means_stats, echo = TRUE}
 
-r.vn.corr <- atanh(r.vn.corr)
-r.vn.eucl <- -r.vn.eucl
-r.vn.neuc <- -r.vn.neuc
+## marginal curves: average across regressors per session*run
 
-stats.subjs.corr <- apply(
-  r.vn.corr, 
-  c("subj", "roi", "norma", "knot"),
-  function(x) x[lt] %*% v.incon
+means.d.marginal <- means.d %>%
+  group_by(run, parcel, session, glm, network, tr, subj) %>%
+  summarize(m = mean(m)) %>%  ## average across trial types
+  summarize(s = sd(m), m = mean(m))  ## average across subjects
+
+## main effects models
+
+means.d.1tr1knot <- means.d %>% filter(glm == "1tr1knot")  ## consider only 1-tr-per-knot glm
+
+means.l.me <- means.d.1tr1knot %>% split(paste(.$tr, .$parcel, .$session, .$network, sep = "."))
+mods.means.me <- lapply(means.l.me, function(x) lm(m ~ run + pc + trial.type, x))  ## fit
+coef.means.me <- lapply(mods.means.me, broom::tidy)  ## extract
+coef.means.me %<>%  ## format
+  bind_rows(.id = "model.id") %>%
+  cbind(reshape2::colsplit(.$model.id, "\\.", c("tr", "parcel", "session", "network")))
+coef.means.me %<>%  ## adjust
+  group_by(tr, session) %>%
+  mutate(p.fdr = p.adjust(p.value, "fdr"))
+
+## interaction models (PC50 only)
+
+means.l.x <- means.d.1tr1knot[means.d.1tr1knot$pc == "PC50", ] %>% split(paste(.$tr, .$parcel, .$network, sep = "."))
+mods.means.x <- lapply(means.l.x, function(x) lm(m ~ run + session * trial.type, x))  ## fit
+coef.means.x <- lapply(mods.means.x, broom::tidy)  ## extract
+coef.means.x %<>%  ## format
+  bind_rows(.id = "model.id") %>%
+  cbind(reshape2::colsplit(.$model.id, "\\.", c("tr", "parcel", "network")))
+coef.means.x %<>%  ## adjust
+  group_by(tr) %>%
+  mutate(p.fdr = p.adjust(p.value, "fdr"))
+
+```
+
+
+## Marginal impulse responses (averaged across all event types)
+
+Curves plot parcel-wise average beta, across all subjects and event / trial types.
+
+```{r means_plot_marginal, fig.height = 6, fig.width = 15}
+
+## marginal
+
+p.marginal.1tr1knot <- means.d.marginal %>%
+  filter(glm == "1tr1knot") %>%
+  mutate(session.run = paste0(session, " ", run)) %>%
+  ggplot(aes(tr, m)) +
+  geom_line(aes(group = parcel, color = network), size = 1) +
+  facet_grid(vars(network), vars(session.run)) +
+  geom_hline(yintercept = 0) +
+  scale_color_brewer(type = "qual", palette = 1) +
+  scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
+  scale_y_continuous(limits = c(-1, 3)) +
+  labs(title = "1 TR / knot", x = "TR (post stimulus onset)", y = "beta") +
+  theme(legend.position = "none")
+
+p.marginal.2tr1knot <- means.d.marginal %>%
+  filter(glm == "2tr1knot") %>%
+  group_by(tr, run, parcel, session, network, glm) %>% summarize(m = mean(m)) %>% ## average across subjs
+  mutate(session.run = paste0(session, " ", run)) %>%
+  ggplot(aes(tr, m)) +
+  geom_line(aes(group = parcel, color = network), size = 1) +
+  facet_grid(vars(network), vars(session.run)) +
+  geom_hline(yintercept = 0) +
+  scale_color_brewer(type = "qual", palette = 1) +
+  scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
+  scale_y_continuous(limits = c(-1, 3)) +
+  labs(title = "2 TR / knot", x = "TR (post stimulus onset)", y = "beta") +
+  theme(legend.position = "none")
+
+grid.arrange(
+  p.marginal.1tr1knot, p.marginal.2tr1knot, 
+  top = "parcel-wise mean activation (across all event estimates)",
+  ncol = 2
   )
-stats.subjs.eucl <- apply(
-  r.vn.eucl, 
-  c("subj", "roi", "norma", "knot"),
-  function(x) x[lt] %*% v.incon
+
+
+```
+
+Seems like plenty of signal in the 1 TR per knot GLMs.
+
+Now to checking the variability across subjects.
+These curves plot parcel-wise standard deviations of marginal impulse responses (across subjects).
+```{r means_plot_marginal_sd, fig.height = 6, fig.width = 15}
+
+## marginal
+
+p.marginal.1tr1knot.sd <- means.d.marginal %>%
+  filter(glm == "1tr1knot") %>%
+  mutate(session.run = paste0(session, " ", run)) %>%
+  ggplot(aes(tr, s)) +
+  geom_line(aes(group = parcel, color = network), size = 1) +
+  facet_grid(vars(network), vars(session.run)) +
+  geom_hline(yintercept = 0) +
+  scale_color_brewer(type = "qual", palette = 1) +
+  scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
+  scale_y_continuous(limits = c(0, 3)) +
+  labs(title = "1 TR / knot", x = "TR (post stimulus onset)", y = "sd(beta)") +
+  theme(legend.position = "none")
+
+p.marginal.2tr1knot.sd <- means.d.marginal %>%
+  filter(glm == "2tr1knot") %>%
+  mutate(session.run = paste0(session, " ", run)) %>%
+  ggplot(aes(tr, s)) +
+  geom_line(aes(group = parcel, color = network), size = 1) +
+  facet_grid(vars(network), vars(session.run)) +
+  geom_hline(yintercept = 0) +
+  scale_color_brewer(type = "qual", palette = 1) +
+  scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
+  scale_y_continuous(limits = c(0, 3)) +
+  labs(title = "2 TR / knot", x = "TR (post stimulus onset)", y = "sd(beta)") +
+  theme(legend.position = "none")
+
+grid.arrange(
+  p.marginal.1tr1knot.sd, p.marginal.2tr1knot.sd, 
+  top = "parcel-wise standard deviation in activation (across subjects)",
+  ncol = 2
   )
-stats.subjs.neuc <- apply(
-  r.vn.neuc, 
-  c("subj", "roi", "norma", "knot"),
-  function(x) x[lt] %*% v.incon
-  )
 
-stats.subjs <- rbind(
-  reshape2::melt(stats.subjs.corr) %>% mutate(measu = "corr"),
-  reshape2::melt(stats.subjs.eucl) %>% mutate(measu = "eucl"),
-  reshape2::melt(stats.subjs.neuc) %>% mutate(measu = "neuc")
-)
-stats.subjs$num.roi <- match(stats.subjs$roi, atlas$key)
-stats.subjs %<>% mutate(hemi = substr(roi, 1, 1))
 
-## remove subjs with no glm:
+```
 
-subjs.nofit <- stats.subjs %>%
-  filter(is.na(value)) %>%
-  pull(subj) %>%
-  as.character %>%
+
+## Contrasts: main effects of run, pc, and trial.type
+
+A linear model was fit on each parcel\*session\*knot, with dummy-coded regresssors for **run**, **proportion congruence**, (pc50, bias) and **trial type** (congruent, incongruent).
+
+Curves plot parcel-wise t statistic for each regressor.
+
+Here only 1 TR / knot GLMs are considered.
+
+```{r means_plot_maineffects, fig.height = 6, fig.width = 15}
+
+## run
+
+coef.means.me %>%
+  filter(term == "runrun2") %>%
+  ggplot(aes(tr, statistic)) +
+  geom_beeswarm(
+    aes(fill = network, alpha = p.fdr < 0.05, color = ifelse(p.fdr < 0.05, "black", "white")), 
+    size = 1.5, shape = 21
+    ) +
+  scale_color_identity() +
+  scale_alpha_manual(values = c("TRUE" = 1, "FALSE" = 0.2)) +
+  facet_grid(vars(network), vars(session)) +
+  geom_hline(yintercept = 0) +
+  scale_fill_brewer(type = "qual", palette = 1) +
+  scale_x_continuous(limits = c(0, 9), breaks = seq(1, 8)) +
+  labs(title = "run effect (run 2 minus run 1)", x = "TR (post stimulus onset)", y = "t statistic") +
+  theme(legend.position = "none")
+
+## pc
+
+coef.means.me %>%
+  filter(term == "pcbias") %>%
+  ggplot(aes(tr, statistic)) +
+  geom_beeswarm(
+    aes(fill = network, alpha = p.fdr < 0.05, color = ifelse(p.fdr < 0.05, "black", "white")), 
+    size = 1.5, shape = 21
+    ) +
+  scale_color_identity() +
+  scale_alpha_manual(values = c("TRUE" = 1, "FALSE" = 0.2)) +
+  facet_grid(vars(network), vars(session)) +
+  geom_hline(yintercept = 0) +
+  scale_fill_brewer(type = "qual", palette = 1) +
+  scale_x_continuous(limits = c(0, 9), breaks = seq(1, 8)) +
+  labs(title = "pc effect (bias minus pc50)", x = "TR (post stimulus onset)", y = "t statistic") +
+  theme(legend.position = "none")
+
+## stroop
+
+coef.means.me %>%
+  filter(term == "trial.typeInCon") %>%
+  ggplot(aes(tr, statistic)) +
+  geom_beeswarm(
+    aes(fill = network, alpha = p.fdr < 0.05, color = ifelse(p.fdr < 0.05, "black", "white")), 
+    size = 1.5, shape = 21
+    ) +
+  scale_color_identity() +
+  scale_alpha_manual(values = c("TRUE" = 1, "FALSE" = 0.2)) +
+  facet_grid(vars(network), vars(session)) +
+  geom_hline(yintercept = 0) +
+  scale_fill_brewer(type = "qual", palette = 1) +
+  scale_x_continuous(limits = c(0, 9), breaks = seq(1, 8)) +
+  labs(title = "stroop effect", x = "TR (post stimulus onset)", y = "t statistic") +
+  theme(legend.position = "none")
+
+```
+
+## Contrasts: interaction of trial.type with session for PC50 items
+
+Filled in circles now indicate p(uncorrected) < 0.05. (No parcels were significant with FDR correction.)
+```{r means_plot_interaction, fig.height = 6, fig.width = 15}
+
+## stroop
+
+coef.means.x %>%
+  filter(term == "sessionproactive:trial.typeInCon") %>%
+  ggplot(aes(tr, statistic)) +
+    geom_beeswarm(
+    aes(fill = network, alpha = p.value < 0.05, color = ifelse(p.value < 0.05, "black", "white")), 
+    size = 1.5, shape = 21
+    ) +
+  scale_color_identity() +
+  scale_alpha_manual(values = c("TRUE" = 1, "FALSE" = 0.2)) +
+  facet_grid(vars(network)) +
+  geom_hline(yintercept = 0) +
+  scale_fill_brewer(type = "qual", palette = 1) +
+  scale_x_continuous(limits = c(0, 9), breaks = seq(1, 8)) +
+  labs(title = "PC50 stroop effect by session (proactive - baseline)", x = "TR (post stimulus onset)", y = "t statistic") +
+  theme(legend.position = "none")
+
+```
+
+## List
+
+```{r, echo = TRUE}
+
+roi.univ <- coef.means.me %>%
+  filter(term == "trial.typeInCon", p.fdr < 0.05, session == "baseline", tr >= 2, tr <= 5, estimate > 0) %>%
+  pull(parcel) %>% 
   unique
 
-stats.subjs %<>% filter(!subj %in% subjs.nofit)
+roi.univ
 
-## get group-level stats ----
+```
 
-stats.group <- stats.subjs %>%
-  filter(knot %in% c("knot2", "knot3")) %>%
-  group_by(subj, num.roi, roi,hemi, measu, norma) %>%
-  summarize(value = mean(value)) %>%
-  group_by(num.roi, roi, hemi, measu, norma) %>%
+
+
+# Multivariate: 'vanilla' RSA
+
+* cross-run RSA
+* models: on-diag (reliability), on-vs-off diag (omnibus encoding), incongruency (incon - baseline)
+* focus incongruency analysis on PC50 items only: trial counts balanced between congruent and incongruent trial types.
+
+
+## Stats
+
+
+```{r vanil_stats_prep}
+
+## unwrap lower-triangle of similarity matrices to vector
+
+vanil.1tr1knot.lt <- apply(
+  vanil.1tr1knot, 
+  c("norma", "knot", "parcel", "subj", "session", "measure"), 
+  function(x) x[lt]
+  )  ## unwrap to lower triangle
+
+vanil.2tr1knot.lt <- apply(
+  vanil.2tr1knot, 
+  c("norma", "knot", "parcel", "subj", "session", "measure"), 
+  function(x) x[lt]
+  )  ## unwrap to lower triangle
+
+## fisher transform correlations
+
+vanil.1tr1knot.lt[, , , , , , "corr"] <- atanh(vanil.1tr1knot.lt[, , , , , , "corr"])  ## r to z
+vanil.2tr1knot.lt[, , , , , , "corr"] <- atanh(vanil.2tr1knot.lt[, , , , , , "corr"])  ## r to z
+
+## build design matrices
+
+params.omnibus <- c("ond", "offd", "run")
+params.inconub <- c("incon", "congr", "bias.any", "run")
+
+X.omnibus <- cbind(intercept = 1, vapply(mlist[params.omnibus], function(x) x[lt], numeric(sum(lt))))  ## include intercept
+X.inconub <- cbind(intercept = 1, vapply(mlist[params.inconub], function(x) x[lt], numeric(sum(lt))))
+
+qcor(mlist$ond)
+qcor(mlist$offd)
+
+```
+
+
+
+```{r vanil_stats, echo = TRUE}
+
+## 'omnibus' models ----
+
+vanil.1tr1knot.subj.omnibus <- apply(
+  vanil.1tr1knot.lt, 
+  c("norma", "knot", "parcel", "subj", "session", "measure"),
+  function(y) .lm.fit(X.omnibus, y)$coef
+  )  ## fit
+dimnames(vanil.1tr1knot.subj.omnibus)[[1]] <- colnames(X.omnibus)
+names(dimnames(vanil.1tr1knot.subj.omnibus))[[1]] <- "param"
+
+vanil.2tr1knot.subj.omnibus <- apply(
+  vanil.2tr1knot.lt, 
+  c("norma", "knot", "parcel", "subj", "session", "measure"),
+  function(y) .lm.fit(X.omnibus, y)$coef
+  )  ## fit
+dimnames(vanil.2tr1knot.subj.omnibus)[[1]] <- colnames(X.omnibus)
+names(dimnames(vanil.2tr1knot.subj.omnibus))[[1]] <- "param"
+
+vanil.omnibus <- rbind(
+  reshape2::melt(vanil.2tr1knot.subj.omnibus) %>% mutate(glm = "2tr1knot", tr = as.numeric(gsub("knot", "", knot)) * 2),
+  reshape2::melt(vanil.1tr1knot.subj.omnibus) %>% mutate(glm = "1tr1knot", tr = as.numeric(gsub("knot", "", knot)))
+)
+
+vanil.omnibus$network <- ""  ## add networks
+for (network.i in networks) vanil.omnibus$network[grepl(network.i, vanil.omnibus$parcel)] <- network.i
+
+
+## "incongruency unbiased" (pc50) models ----
+
+vanil.1tr1knot.subj.inconub <- apply(
+  vanil.1tr1knot.lt, 
+  c("norma", "knot", "parcel", "subj", "session", "measure"),
+  function(y) .lm.fit(X.inconub, y)$coef
+  )  ## fit
+dimnames(vanil.1tr1knot.subj.inconub)[[1]] <- colnames(X.inconub)
+names(dimnames(vanil.1tr1knot.subj.inconub))[[1]] <- "param"
+
+vanil.2tr1knot.subj.inconub <- apply(
+  vanil.2tr1knot.lt, 
+  c("norma", "knot", "parcel", "subj", "session", "measure"),
+  function(y) .lm.fit(X.inconub, y)$coef
+  )  ## fit
+dimnames(vanil.2tr1knot.subj.inconub)[[1]] <- colnames(X.inconub)
+names(dimnames(vanil.2tr1knot.subj.inconub))[[1]] <- "param"
+
+vanil.inconub <- rbind(
+  reshape2::melt(vanil.2tr1knot.subj.inconub) %>% mutate(glm = "2tr1knot", tr = as.numeric(gsub("knot", "", knot)) * 2),
+  reshape2::melt(vanil.2tr1knot.subj.inconub) %>% mutate(glm = "1tr1knot", tr = as.numeric(gsub("knot", "", knot)))
+)
+
+vanil.inconub$network <- ""  ## add networks
+for (network.i in networks) vanil.inconub$network[grepl(network.i, vanil.inconub$parcel)] <- network.i
+
+
+## group-level stats ----
+
+vanil.omnibus.group <- vanil.omnibus %>%
+  filter(param %in% c("ond", "offd")) %>%
+  tidyr::spread(param, value) %>%
+  mutate(diff = ond - offd, offd = NULL) %>%
+  tidyr::pivot_longer(c("ond", "diff"), names_to = "param", values_to = "value") %>%
+  group_by(norma, tr, parcel, session, measure, glm, param, network) %>%
   summarize(
     p = wilcox.test(value, alternative = "greater")$p.value,
     w = wilcox.test(value, alternative = "greater")$statistic,
     m = mean(value)
   ) %>%
-  group_by(measu, norma) %>%
+  group_by(norma, tr, session, measure, glm, param, network) %>%
+  mutate(p.fdr = p.adjust(p, method = "fdr"))
+
+vanil.me.group <-  vanil.inconub %>% 
+  # filter(param == "incon") %>%
+  group_by(norma, tr, parcel, session, measure, glm, network, param) %>%
+  summarize(
+    p = wilcox.test(value, alternative = "greater")$p.value,
+    w = wilcox.test(value, alternative = "greater")$statistic,
+    m = mean(value)
+  ) %>%
+  group_by(norma, tr, session, measure, glm, network, param) %>%
+  mutate(p.fdr = p.adjust(p, method = "fdr"))
+
+vanil.x.group <- vanil.inconub %>%
+  filter(param == "incon") %>%
+  tidyr::spread(session, value) %>%
+  # tidyr::pivot_wider(names_from = session, values_from = "value") %>%
+  mutate(value = proactive - baseline) %>%
+  group_by(norma, tr, parcel, measure, glm, network) %>%
+  summarize(
+    p = wilcox.test(value)$p.value,
+    w = wilcox.test(value)$statistic,
+    m = mean(value)
+  ) %>%
+  group_by(norma, tr, measure, glm, network) %>%
   mutate(p.fdr = p.adjust(p, method = "fdr"))
 
 ```
 
 
 
-## coverage
+## Omnibus: reliability and an 'encoding test'
 
-* displayed on brains is RSA-model fit statistics (mean contrast)
-* average of knots 2 and 3
-* order: correlation, euclidean, normalized euclidean; raw first, then prewhitened
-* for thresholded brains: alpha = 0.05 FDR corrected across all 400 parcels
+```{r vanil_plot_omnibus, fig.height = 6, fig.width = 15}
 
-#### unthresholded
+## omnibus
 
-```{r coverage_unthresh}
+vanil.omnibus.group %>%
+  
+  filter(glm == "1tr1knot", measure == "corr", norma == "raw", param == "ond") %>%
+  
+  ggplot(aes(tr, m)) +
+  geom_line(aes(group = parcel, color = network), size = 1) +
+  facet_grid(vars(network), vars(session)) +
+  geom_hline(yintercept = 0) +
+  
+  scale_color_brewer(type = "qual", palette = 1) +
+  # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
+  # scale_y_continuous(limits = c(-1, 3)) +
+  
+  labs(title = "1 TR / knot", x = "TR (post stimulus onset)", y = "beta") +
+  theme(legend.position = "none")
 
-stats.group %>%
-  filter(measu == "corr", norma == "raw") %>%
-  build_overlay("m", template = schaefer) %>%
-  plot_surface(underlay = hcp)
+vanil.omnibus.group %>%
+  
+  filter(glm == "1tr1knot", measure == "corr", norma == "raw", param == "diff") %>%
+  
+  ggplot(aes(tr, m)) +
+  geom_line(aes(group = parcel, color = network), size = 1) +
+  facet_grid(vars(network), vars(session)) +
+  geom_hline(yintercept = 0) +
+  
+  scale_color_brewer(type = "qual", palette = 1) +
+  # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
+  # scale_y_continuous(limits = c(-1, 3)) +
+  
+  labs(title = "1 TR / knot", x = "TR (post stimulus onset)", y = "beta") +
+  theme(legend.position = "none")
 
-stats.group %>%
-  filter(measu == "eucl", norma == "raw") %>%
-  build_overlay("m", template = schaefer) %>%
-  plot_surface(underlay = hcp)
 
-stats.group %>%
-  filter(measu == "neuc", norma == "raw") %>%
-  build_overlay("m", template = schaefer) %>%
-  plot_surface(underlay = hcp)
+## incongruency
 
-stats.group %>%
-  filter(measu == "corr", norma == "prw") %>%
-  build_overlay("m", template = schaefer) %>%
-  plot_surface(underlay = hcp)
+vanil.me.group %>%
+  
+  filter(glm == "2tr1knot", measure == "corr", norma == "raw") %>%
+  
+  ggplot(aes(tr, m)) +
+  geom_line(aes(group = parcel, color = network), size = 1) +
+  facet_grid(vars(network), vars(session)) +
+  geom_hline(yintercept = 0) +
+  
+  scale_color_brewer(type = "qual", palette = 1) +
+  # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
+  # scale_y_continuous(limits = c(-0.5, 0.2)) +
+  
+  labs(title = "1 TR / knot", x = "TR (post stimulus onset)", y = "beta") +
+  theme(legend.position = "none")
 
-stats.group %>%
-  filter(measu == "eucl", norma == "prw") %>%
-  build_overlay("m", template = schaefer) %>%
-  plot_surface(underlay = hcp)
 
-stats.group %>%
-  filter(measu == "neuc", norma == "prw") %>%
-  build_overlay("m", template = schaefer) %>%
-  plot_surface(underlay = hcp)
+vanil.me.group %>%
+  filter(glm == "2tr1knot", measure == "corr", norma == "prw", param == "congr") %>%
+  ggplot(aes(tr, m)) +
+  geom_beeswarm(
+    aes(fill = network, alpha = p.fdr < 0.05, color = ifelse(p.fdr < 0.05, "black", "white")), 
+    size = 1.5, shape = 21
+    ) +
+  scale_color_identity() +
+  scale_alpha_manual(values = c("TRUE" = 1, "FALSE" = 0.2)) +
+  facet_grid(vars(network), vars(session)) +
+  geom_hline(yintercept = 0) +
+  scale_fill_brewer(type = "qual", palette = 1) +
+  # scale_x_continuous(limits = c(0, 9), breaks = seq(1, 8)) +
+  labs(title = "incongruency model fit (pc50 items only)", x = "TR (post stimulus onset)", y = "contrast of z") +
+  theme(legend.position = "none")
+
+
+
+
+
+vanil.me.group %>%
+  filter(glm == "1tr1knot", measure == "corr", norma == "raw", param == "congr") %>%
+  group_by(session, parcel, network) %>%
+  summarize(m = mean(m)) %>%
+  tidyr::spread(session, m) %>%
+  ggplot(aes(baseline, proactive)) +
+  geom_point(aes(fill = network), size = 1.5, shape = 21, color = "white") +
+  facet_grid(vars(network)) +
+  coord_cartesian(xlim = c(-0.1, 0.1), ylim = c(-0.1, 0.1)) +
+  geom_abline() +
+  # scale_fill_brewer(type = "qual", palette = 1) +
+  # scale_x_continuous(limits = c(0, 9), breaks = seq(1, 8)) +
+  # labs(title = "incongruency model fit (pc50 items only)", x = "TR (post stimulus onset)", y = "contrast of z") +
+  theme(legend.position = "none")
+
+## all cross-run correlations, all within pc50 items:
+##   - congruent--incongruent correlation (intercept) is approximately equal across sessions
+##   - incongruent--incongruent correlaion is positive and higher across the board in proactive versus baseline
+##   - congruent--congruent correlation is negative and lower across the board in proactive verus baseline
+
+## something is wrong with the proactive session results.
+##  - model fitting procedure?
+##  - RDMs?
+##  - GLMs?
+##  ...
+
+
+
+
+
+
+
+
+
+vanil.me.group %>%
+  filter(glm == "2tr1knot", measure == "corr", norma == "raw", param == "incon", session == "proactive", p.fdr < 0.05)
+
+
+vanil.me.group %>%
+  filter(p.fdr < 0.05)
+
+apply(vanil.1tr1knot[, , "raw", , , , "baseline", "corr"], c(".row", ".col"), mean) %>% qcor
+apply(vanil.1tr1knot[, , "raw", , , , "proactive", "corr"], c(".row", ".col"), mean) %>% qcor
+
+p <- apply(vanil.1tr1knot[, , "raw", , , , "proactive", "corr"], c(".row", ".col"), mean)
+p <- p[is.pc50, ]
+p <- p[, is.pc50]
+qcor(p)
+
+b <- apply(vanil.1tr1knot[, , "raw", , , , "baseline", "corr"], c(".row", ".col"), mean)
+b <- b[is.pc50, ]
+b <- b[, is.pc50]
+qcor(b)
+
+
+b1 <- apply(vanil.1tr1knot[, , "raw", , , 1, "baseline", "corr"], c(".row", ".col"), mean)
+qcor(b1)
+
+names(dimnames(vanil.1tr1knot))
+
+
+qcor(mlist$run)
+qcor(mlist$bias.any)
+
+qcor((1 - mlist$bias.any) * (1 - mlist$run) * mlist$incon *  (1 - mlist$congr))
+
+qcor((1 - mlist$bias.any) * (1 - mlist$run) * (1 - mlist$incon) *  (1 - mlist$congr))
+
+
+
+
+
+
+
+
+vanil.x.group %>%
+  
+  filter(glm == "1tr1knot", measure == "corr") %>%
+  
+  ggplot(aes(tr, p)) +
+  geom_line(aes(group = parcel, color = network), size = 1) +
+  facet_grid(vars(network), vars(norma)) +
+  geom_hline(yintercept = 0) +
+  
+  scale_color_brewer(type = "qual", palette = 1)
+  scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
+  scale_y_continuous(limits = c(-1, 3)) +
+  
+  labs(title = "1 TR / knot", x = "TR (post stimulus onset)", y = "beta") +
+  theme(legend.position = "none")
+  
+
+  
+  
+  
+vanil.omnibus.group %>%
+  
+  filter(glm == "2tr1knot") %>%
+  
+  mutate(session.run = paste0(session, " ", run)) %>%
+  
+  ggplot(aes(tr, m)) +
+  geom_line(aes(group = parcel, color = network), size = 1) +
+  facet_grid(vars(network), vars(session.run)) +
+  geom_hline(yintercept = 0) +
+  
+  scale_color_brewer(type = "qual", palette = 1)
+  scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
+  scale_y_continuous(limits = c(-1, 3)) +
+  
+  labs(title = "2 TR / knot", x = "TR (post stimulus onset)", y = "beta") +
+  theme(legend.position = "none")
+
+
+grid.arrange(
+  p.marginal.1tr1knot, p.marginal.2tr1knot, 
+  top = "parcel-wise mean activation (across all event estimates)",
+  ncol = 2
+  )
 
 
 ```
-
-
-#### thresholded
-
-```{r coverage_thresh}
-
-stats.group %>%
-  mutate(m = ifelse(p.fdr < 0.05, m, 0)) %>%
-  filter(measu == "corr", norma == "raw") %>%
-  build_overlay("m", template = schaefer) %>%
-  plot_surface(underlay = hcp)
-
-stats.group %>%
-  mutate(m = ifelse(p.fdr < 0.05, m, 0)) %>%
-  filter(measu == "eucl", norma == "raw") %>%
-  build_overlay("m", template = schaefer) %>%
-  plot_surface(underlay = hcp)
- 
-stats.group %>%
-  mutate(m = ifelse(p.fdr < 0.05, m, 0)) %>%
-  filter(measu == "neuc", norma == "raw") %>%
-  build_overlay("m", template = schaefer) %>%
-  plot_surface(underlay = hcp)
-
-stats.group %>%
-  mutate(m = ifelse(p.fdr < 0.05, m, 0)) %>%
-  filter(measu == "corr", norma == "prw") %>%
-  build_overlay("m", template = schaefer) %>%
-  plot_surface(underlay = hcp)
-
-stats.group %>%
-  mutate(m = ifelse(p.fdr < 0.05, m, 0)) %>%
-  filter(measu == "eucl", norma == "prw") %>%
-  build_overlay("m", template = schaefer) %>%
-  plot_surface(underlay = hcp)
- 
-stats.group %>%
-  mutate(m = ifelse(p.fdr < 0.05, m, 0)) %>%
-  filter(measu == "neuc", norma == "prw") %>%
-  build_overlay("m", template = schaefer) %>%
-  plot_surface(underlay = hcp)
- 
-```
-
-
-#### comparison of test statistics
-
-
