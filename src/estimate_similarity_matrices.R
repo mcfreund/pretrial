@@ -191,12 +191,12 @@ for (sess.i in seq_along(sessi)) {
           
           betas <- abind(
             run1 = cbind(betas[["run1_L"]], betas[["run1_R"]]),
-            run2 = cbind(betas[["run2_L"]], betas[["run2_L"]]),
+            run2 = cbind(betas[["run2_L"]], betas[["run2_R"]]),
             rev.along = 0
           )
           resid <- abind(
             run1 = cbind(resid[["run1_L"]], resid[["run1_R"]]),
-            run2 = cbind(resid[["run2_L"]], resid[["run2_L"]]),
+            run2 = cbind(resid[["run2_L"]], resid[["run2_R"]]),
             rev.along = 0
           )
           
