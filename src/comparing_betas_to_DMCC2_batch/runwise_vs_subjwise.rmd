@@ -1,0 +1,88 @@
+---
+title: 'Comparing betas between runwise and subj-wise (DMCC2 batch) GLMs'
+author: "michael freund"
+date: "15 April 2020"
+output:
+  html_document:
+  toc: true
+highlight: zenburn
+---
+  
+```{r setup, include = FALSE}
+
+knitr::opts_chunk$set(
+  cache = TRUE, echo = FALSE, warning = FALSE, message = FALSE,
+  fig.align = 'center',
+  fig.width = 11.5, fig.fullwidth = TRUE
+)
+
+set.seed(0)
+
+library(here)
+library(magrittr)
+library(dplyr)
+library(data.table)
+library(mikeutils)
+library(lme4)
+library(ggplot2)
+library(ggbeeswarm)
+library(grid)
+library(gridExtra)
+library(cowplot)
+library(cifti)
+library(gifti)
+library(abind)
+
+## settings ----
+
+theme_set(theme_classic(base_size = 8))
+
+
+## data ----
+
+## behavior and events
+
+pretrial <- fread(here("data", "pretrial_behavior.csv"))
+pretrial.subjsum <- fread(here("data", "pretrial_subjsumm.csv"))
+
+
+## atlases ----
+
+# list.files("/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/ATLASES")
+
+parcellation <- read_atlas("schaefer400")
+
+nodename <- Sys.info()["nodename"]
+if (nodename == "ccplinux1") {
+  dir.atlas <- "/data/nil-external/ccp/freund/atlases"
+  dir.schaefer <- "/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/ATLASES/"
+} else if (nodename == "CCP-FREUND") {
+  dir.atlas <- "C:/local/atlases"
+  dir.schaefer <- dir.atlas
+}
+
+
+hcp <- list(
+  L  = readGIfTI(
+    file.path(dir.atlas, "surf", "HCP_S1200_GroupAvg_v1", "S1200.L.midthickness_MSMAll.32k_fs_LR.surf.gii")
+  ),
+  R = readGIfTI(
+    file.path(dir.atlas, "surf", "HCP_S1200_GroupAvg_v1", "S1200.R.midthickness_MSMAll.32k_fs_LR.surf.gii")
+  )
+)
+
+over <- list(
+  L = parcellation$atlas[1:(nrow(parcellation$atlas) / 2)], 
+  R = parcellation$atlas[(nrow(parcellation$atlas) / 2):nrow(parcellation$atlas)]
+)
+
+schaefer <- list(
+  L = read_gifti2matrix(
+    "/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/ATLASES/Schaefer2018_400Parcels_7Networks_order_L.label.gii"
+    ) %>% c,
+  R = read_gifti2matrix(
+    "/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/ATLASES/Schaefer2018_400Parcels_7Networks_order_R.label.gii"
+    ) %>% c
+)
+
+```

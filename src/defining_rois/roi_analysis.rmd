@@ -299,7 +299,8 @@ coef.means.me %<>%  ## adjust
 
 ## interaction models (PC50 only)
 
-means.l.x <- means.d.1tr1knot[means.d.1tr1knot$pc == "PC50", ] %>% split(paste(.$tr, .$parcel, .$network, sep = "."))
+means.l.x <- means.d.1tr1knot[means.d.1tr1knot$pc == "PC50", ] %>% 
+  split(paste(.$tr, .$parcel, .$network, sep = "."))
 mods.means.x <- lapply(means.l.x, function(x) lm(m ~ run + session * trial.type, x))  ## fit
 coef.means.x <- lapply(mods.means.x, broom::tidy)  ## extract
 coef.means.x %<>%  ## format
@@ -495,12 +496,28 @@ coef.means.x %>%
 
 ```{r, echo = TRUE}
 
-roi.univ <- coef.means.me %>%
+roi.univ.bas <- coef.means.me %>%
   filter(term == "trial.typeInCon", p.fdr < 0.05, session == "baseline", tr >= 2, tr <= 5, estimate > 0) %>%
   pull(parcel) %>% 
   unique
 
-roi.univ
+roi.univ.bas
+
+
+roi.univ.pro <- coef.means.me %>%
+  filter(term == "trial.typeInCon", p.fdr < 0.05, session == "proactive", tr >= 2, tr <= 5, estimate > 0) %>%
+  pull(parcel) %>% 
+  unique
+
+roi.univ.pro
+
+roi.univ.pro.uncorrected <- coef.means.me %>%
+  filter(term == "trial.typeInCon", p.value < 0.05, session == "proactive", tr >= 2, tr <= 5, estimate > 0) %>%
+  pull(parcel) %>% 
+  unique
+
+roi.univ.pro.uncorrected
+
 
 ```
 
@@ -545,8 +562,8 @@ params.inconub <- c("incon", "congr", "bias.any", "run")
 X.omnibus <- cbind(intercept = 1, vapply(mlist[params.omnibus], function(x) x[lt], numeric(sum(lt))))  ## include intercept
 X.inconub <- cbind(intercept = 1, vapply(mlist[params.inconub], function(x) x[lt], numeric(sum(lt))))
 
-qcor(mlist$ond)
-qcor(mlist$offd)
+# qcor(mlist$ond)
+# qcor(mlist$offd)
 
 ```
 
@@ -651,205 +668,689 @@ vanil.x.group <- vanil.inconub %>%
 
 ```
 
-
-
 ## Omnibus: reliability and an 'encoding test'
+
+These curves are across all items (bias + pc50)
 
 ```{r vanil_plot_omnibus, fig.height = 6, fig.width = 15}
 
 ## omnibus
 
 vanil.omnibus.group %>%
-  
+
   filter(glm == "1tr1knot", measure == "corr", norma == "raw", param == "ond") %>%
-  
+
   ggplot(aes(tr, m)) +
   geom_line(aes(group = parcel, color = network), size = 1) +
   facet_grid(vars(network), vars(session)) +
   geom_hline(yintercept = 0) +
-  
+
   scale_color_brewer(type = "qual", palette = 1) +
   # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
   # scale_y_continuous(limits = c(-1, 3)) +
-  
-  labs(title = "1 TR / knot", x = "TR (post stimulus onset)", y = "beta") +
+
+  labs(title = "mean cross-run reliability", x = "TR (post stimulus onset)", y = "z") +
   theme(legend.position = "none")
 
 vanil.omnibus.group %>%
-  
+
   filter(glm == "1tr1knot", measure == "corr", norma == "raw", param == "diff") %>%
-  
+
   ggplot(aes(tr, m)) +
   geom_line(aes(group = parcel, color = network), size = 1) +
   facet_grid(vars(network), vars(session)) +
   geom_hline(yintercept = 0) +
-  
+
   scale_color_brewer(type = "qual", palette = 1) +
   # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
   # scale_y_continuous(limits = c(-1, 3)) +
-  
-  labs(title = "1 TR / knot", x = "TR (post stimulus onset)", y = "beta") +
+
+  labs(title = "mean reliability - mean off-diagonal", x = "TR (post stimulus onset)", y = "z") +
   theme(legend.position = "none")
 
+```
+
+
+## Incongruency contrast per session (PC50 items only)
+
+```{r vanil_plot_incongruency, fig.height = 6, fig.width = 15}
 
 ## incongruency
 
 vanil.me.group %>%
-  
-  filter(glm == "2tr1knot", measure == "corr", norma == "raw") %>%
-  
+
+  filter(glm == "1tr1knot", measure == "corr", param == "incon", norma == "raw") %>%
+
   ggplot(aes(tr, m)) +
   geom_line(aes(group = parcel, color = network), size = 1) +
   facet_grid(vars(network), vars(session)) +
   geom_hline(yintercept = 0) +
-  
+
   scale_color_brewer(type = "qual", palette = 1) +
   # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
   # scale_y_continuous(limits = c(-0.5, 0.2)) +
-  
-  labs(title = "1 TR / knot", x = "TR (post stimulus onset)", y = "beta") +
+
+  labs(
+    title = "simil measure: correlation", 
+    x = "TR (post stimulus onset)",
+    y = "sim(incon, incon) - sim(incon, congr)"
+    ) +
   theme(legend.position = "none")
 
 
 vanil.me.group %>%
-  filter(glm == "2tr1knot", measure == "corr", norma == "prw", param == "congr") %>%
+
+  filter(glm == "1tr1knot", measure == "corr", param == "incon", norma == "prw") %>%
+
   ggplot(aes(tr, m)) +
-  geom_beeswarm(
-    aes(fill = network, alpha = p.fdr < 0.05, color = ifelse(p.fdr < 0.05, "black", "white")), 
-    size = 1.5, shape = 21
-    ) +
-  scale_color_identity() +
-  scale_alpha_manual(values = c("TRUE" = 1, "FALSE" = 0.2)) +
+  geom_line(aes(group = parcel, color = network), size = 1) +
   facet_grid(vars(network), vars(session)) +
   geom_hline(yintercept = 0) +
-  scale_fill_brewer(type = "qual", palette = 1) +
-  # scale_x_continuous(limits = c(0, 9), breaks = seq(1, 8)) +
-  labs(title = "incongruency model fit (pc50 items only)", x = "TR (post stimulus onset)", y = "contrast of z") +
+
+  scale_color_brewer(type = "qual", palette = 1) +
+  # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
+  # scale_y_continuous(limits = c(-0.5, 0.2)) +
+
+  labs(
+    title = "simil measure: prewhitened correlation", 
+    x = "TR (post stimulus onset)", 
+    y = "sim(incon, incon) - sim(incon, congr)"
+    ) +
   theme(legend.position = "none")
 
 
-
-
-
 vanil.me.group %>%
-  filter(glm == "1tr1knot", measure == "corr", norma == "raw", param == "congr") %>%
-  group_by(session, parcel, network) %>%
-  summarize(m = mean(m)) %>%
-  tidyr::spread(session, m) %>%
-  ggplot(aes(baseline, proactive)) +
-  geom_point(aes(fill = network), size = 1.5, shape = 21, color = "white") +
-  facet_grid(vars(network)) +
-  coord_cartesian(xlim = c(-0.1, 0.1), ylim = c(-0.1, 0.1)) +
-  geom_abline() +
-  # scale_fill_brewer(type = "qual", palette = 1) +
-  # scale_x_continuous(limits = c(0, 9), breaks = seq(1, 8)) +
-  # labs(title = "incongruency model fit (pc50 items only)", x = "TR (post stimulus onset)", y = "contrast of z") +
-  theme(legend.position = "none")
 
-## all cross-run correlations, all within pc50 items:
-##   - congruent--incongruent correlation (intercept) is approximately equal across sessions
-##   - incongruent--incongruent correlaion is positive and higher across the board in proactive versus baseline
-##   - congruent--congruent correlation is negative and lower across the board in proactive verus baseline
+  filter(glm == "1tr1knot", measure == "neg.eucl", param == "incon", norma == "raw") %>%
 
-## something is wrong with the proactive session results.
-##  - model fitting procedure?
-##  - RDMs?
-##  - GLMs?
-##  ...
-
-
-
-
-
-
-
-
-
-vanil.me.group %>%
-  filter(glm == "2tr1knot", measure == "corr", norma == "raw", param == "incon", session == "proactive", p.fdr < 0.05)
-
-
-vanil.me.group %>%
-  filter(p.fdr < 0.05)
-
-apply(vanil.1tr1knot[, , "raw", , , , "baseline", "corr"], c(".row", ".col"), mean) %>% qcor
-apply(vanil.1tr1knot[, , "raw", , , , "proactive", "corr"], c(".row", ".col"), mean) %>% qcor
-
-p <- apply(vanil.1tr1knot[, , "raw", , , , "proactive", "corr"], c(".row", ".col"), mean)
-p <- p[is.pc50, ]
-p <- p[, is.pc50]
-qcor(p)
-
-b <- apply(vanil.1tr1knot[, , "raw", , , , "baseline", "corr"], c(".row", ".col"), mean)
-b <- b[is.pc50, ]
-b <- b[, is.pc50]
-qcor(b)
-
-
-b1 <- apply(vanil.1tr1knot[, , "raw", , , 1, "baseline", "corr"], c(".row", ".col"), mean)
-qcor(b1)
-
-names(dimnames(vanil.1tr1knot))
-
-
-qcor(mlist$run)
-qcor(mlist$bias.any)
-
-qcor((1 - mlist$bias.any) * (1 - mlist$run) * mlist$incon *  (1 - mlist$congr))
-
-qcor((1 - mlist$bias.any) * (1 - mlist$run) * (1 - mlist$incon) *  (1 - mlist$congr))
-
-
-
-
-
-
-
-
-vanil.x.group %>%
-  
-  filter(glm == "1tr1knot", measure == "corr") %>%
-  
-  ggplot(aes(tr, p)) +
-  geom_line(aes(group = parcel, color = network), size = 1) +
-  facet_grid(vars(network), vars(norma)) +
-  geom_hline(yintercept = 0) +
-  
-  scale_color_brewer(type = "qual", palette = 1)
-  scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
-  scale_y_continuous(limits = c(-1, 3)) +
-  
-  labs(title = "1 TR / knot", x = "TR (post stimulus onset)", y = "beta") +
-  theme(legend.position = "none")
-  
-
-  
-  
-  
-vanil.omnibus.group %>%
-  
-  filter(glm == "2tr1knot") %>%
-  
-  mutate(session.run = paste0(session, " ", run)) %>%
-  
   ggplot(aes(tr, m)) +
   geom_line(aes(group = parcel, color = network), size = 1) +
-  facet_grid(vars(network), vars(session.run)) +
+  facet_grid(vars(network), vars(session)) +
   geom_hline(yintercept = 0) +
-  
-  scale_color_brewer(type = "qual", palette = 1)
-  scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
-  scale_y_continuous(limits = c(-1, 3)) +
-  
-  labs(title = "2 TR / knot", x = "TR (post stimulus onset)", y = "beta") +
+
+  scale_color_brewer(type = "qual", palette = 1) +
+  # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
+  # scale_y_continuous(limits = c(-0.5, 0.2)) +
+
+  labs(
+    title = "simil measure: neg. euclidean",
+    x = "TR (post stimulus onset)", 
+    y = "sim(incon, incon) - sim(incon, congr)"
+    ) +
+  theme(legend.position = "none")
+
+vanil.me.group %>%
+
+  filter(glm == "1tr1knot", measure == "neg.eucl", param == "incon", norma == "prw") %>%
+
+  ggplot(aes(tr, m)) +
+  geom_line(aes(group = parcel, color = network), size = 1) +
+  facet_grid(vars(network), vars(session)) +
+  geom_hline(yintercept = 0) +
+
+  scale_color_brewer(type = "qual", palette = 1) +
+  # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
+  # scale_y_continuous(limits = c(-0.5, 0.2)) +
+
+  labs(
+    title = "simil measure: prewhitened neg. euclidean", 
+    x = "TR (post stimulus onset)",
+    y = "sim(incon, incon) - sim(incon, congr)"
+    ) +
   theme(legend.position = "none")
 
 
-grid.arrange(
-  p.marginal.1tr1knot, p.marginal.2tr1knot, 
-  top = "parcel-wise mean activation (across all event estimates)",
-  ncol = 2
-  )
+vanil.me.group %>%
 
+  filter(glm == "1tr1knot", measure == "neg.neuc", param == "incon", norma == "raw") %>%
+
+  ggplot(aes(tr, m)) +
+  geom_line(aes(group = parcel, color = network), size = 1) +
+  facet_grid(vars(network), vars(session)) +
+  geom_hline(yintercept = 0) +
+
+  scale_color_brewer(type = "qual", palette = 1) +
+  # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
+  # scale_y_continuous(limits = c(-0.5, 0.2)) +
+
+  labs(
+    title = "simil measure: neg. normalized euclidean",
+    x = "TR (post stimulus onset)", 
+    y = "sim(incon, incon) - sim(incon, congr)"
+    ) +
+  theme(legend.position = "none")
+
+vanil.me.group %>%
+
+  filter(glm == "1tr1knot", measure == "neg.neuc", param == "incon", norma == "prw") %>%
+
+  ggplot(aes(tr, m)) +
+  geom_line(aes(group = parcel, color = network), size = 1) +
+  facet_grid(vars(network), vars(session)) +
+  geom_hline(yintercept = 0) +
+
+  scale_color_brewer(type = "qual", palette = 1) +
+  # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
+  # scale_y_continuous(limits = c(-0.5, 0.2)) +
+
+  labs(
+    title = "simil measure: prewhitened neg. normalized euclidean", 
+    x = "TR (post stimulus onset)",
+    y = "sim(incon, incon) - sim(incon, congr)"
+    ) +
+  theme(legend.position = "none")
+
+
+```
+
+
+## Congruency contrast per session (PC50 items only)
+
+```{r vanil_plot_congruency, fig.height = 6, fig.width = 15}
+
+## congruency
+
+vanil.me.group %>%
+
+  filter(glm == "1tr1knot", measure == "corr", param == "congr", norma == "raw") %>%
+
+  ggplot(aes(tr, m)) +
+  geom_line(aes(group = parcel, color = network), size = 1) +
+  facet_grid(vars(network), vars(session)) +
+  geom_hline(yintercept = 0) +
+
+  scale_color_brewer(type = "qual", palette = 1) +
+  # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
+  # scale_y_continuous(limits = c(-0.5, 0.2)) +
+
+  labs(
+    title = "simil measure: correlation", 
+    x = "TR (post stimulus onset)",
+    y = "sim(congr, congr) - sim(incon, congr)"
+    ) +
+  theme(legend.position = "none")
+
+
+vanil.me.group %>%
+
+  filter(glm == "1tr1knot", measure == "corr", param == "congr", norma == "prw") %>%
+
+  ggplot(aes(tr, m)) +
+  geom_line(aes(group = parcel, color = network), size = 1) +
+  facet_grid(vars(network), vars(session)) +
+  geom_hline(yintercept = 0) +
+
+  scale_color_brewer(type = "qual", palette = 1) +
+  # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
+  # scale_y_continuous(limits = c(-0.5, 0.2)) +
+
+  labs(
+    title = "simil measure: prewhitened correlation", 
+    x = "TR (post stimulus onset)", 
+    y = "sim(congr, congr) - sim(incon, congr)"
+    ) +
+  theme(legend.position = "none")
+
+
+vanil.me.group %>%
+
+  filter(glm == "1tr1knot", measure == "neg.eucl", param == "congr", norma == "raw") %>%
+
+  ggplot(aes(tr, m)) +
+  geom_line(aes(group = parcel, color = network), size = 1) +
+  facet_grid(vars(network), vars(session)) +
+  geom_hline(yintercept = 0) +
+
+  scale_color_brewer(type = "qual", palette = 1) +
+  # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
+  # scale_y_continuous(limits = c(-0.5, 0.2)) +
+
+  labs(
+    title = "simil measure: neg. euclidean",
+    x = "TR (post stimulus onset)", 
+    y = "sim(congr, congr) - sim(incon, congr)"
+    ) +
+  theme(legend.position = "none")
+
+vanil.me.group %>%
+
+  filter(glm == "1tr1knot", measure == "neg.eucl", param == "congr", norma == "prw") %>%
+
+  ggplot(aes(tr, m)) +
+  geom_line(aes(group = parcel, color = network), size = 1) +
+  facet_grid(vars(network), vars(session)) +
+  geom_hline(yintercept = 0) +
+
+  scale_color_brewer(type = "qual", palette = 1) +
+  # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
+  # scale_y_continuous(limits = c(-0.5, 0.2)) +
+
+  labs(
+    title = "simil measure: prewhitened neg. euclidean", 
+    x = "TR (post stimulus onset)",
+    y = "sim(congr, congr) - sim(incon, congr)"
+    ) +
+  theme(legend.position = "none")
+
+
+vanil.me.group %>%
+
+  filter(glm == "1tr1knot", measure == "neg.neuc", param == "congr", norma == "raw") %>%
+
+  ggplot(aes(tr, m)) +
+  geom_line(aes(group = parcel, color = network), size = 1) +
+  facet_grid(vars(network), vars(session)) +
+  geom_hline(yintercept = 0) +
+
+  scale_color_brewer(type = "qual", palette = 1) +
+  # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
+  # scale_y_continuous(limits = c(-0.5, 0.2)) +
+
+  labs(
+    title = "simil measure: neg. normalized euclidean",
+    x = "TR (post stimulus onset)", 
+    y = "sim(congr, congr) - sim(incon, congr)"
+    ) +
+  theme(legend.position = "none")
+
+vanil.me.group %>%
+
+  filter(glm == "1tr1knot", measure == "neg.neuc", param == "congr", norma == "prw") %>%
+
+  ggplot(aes(tr, m)) +
+  geom_line(aes(group = parcel, color = network), size = 1) +
+  facet_grid(vars(network), vars(session)) +
+  geom_hline(yintercept = 0) +
+
+  scale_color_brewer(type = "qual", palette = 1) +
+  # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
+  # scale_y_continuous(limits = c(-0.5, 0.2)) +
+
+  labs(
+    title = "simil measure: prewhitened neg. normalized euclidean", 
+    x = "TR (post stimulus onset)",
+    y = "sim(congr, congr) - sim(incon, congr)"
+    ) +
+  theme(legend.position = "none")
+
+
+```
+
+
+## Incongruent--congruent similarity per session (PC50 items only)
+
+```{r vanil_plot_intercept, fig.height = 6, fig.width = 15}
+
+## congruency
+
+vanil.me.group %>%
+
+  filter(glm == "1tr1knot", measure == "corr", param == "intercept", norma == "raw") %>%
+
+  ggplot(aes(tr, m)) +
+  geom_line(aes(group = parcel, color = network), size = 1) +
+  facet_grid(vars(network), vars(session)) +
+  geom_hline(yintercept = 0) +
+
+  scale_color_brewer(type = "qual", palette = 1) +
+  # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
+  # scale_y_continuous(limits = c(-0.5, 0.2)) +
+
+  labs(
+    title = "simil measure: correlation", 
+    x = "TR (post stimulus onset)",
+    y = "sim(congr, congr) - sim(incon, congr)"
+    ) +
+  theme(legend.position = "none")
+
+
+vanil.me.group %>%
+
+  filter(glm == "1tr1knot", measure == "corr", param == "intercept", norma == "prw") %>%
+
+  ggplot(aes(tr, m)) +
+  geom_line(aes(group = parcel, color = network), size = 1) +
+  facet_grid(vars(network), vars(session)) +
+  geom_hline(yintercept = 0) +
+
+  scale_color_brewer(type = "qual", palette = 1) +
+  # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
+  # scale_y_continuous(limits = c(-0.5, 0.2)) +
+
+  labs(
+    title = "simil measure: prewhitened correlation", 
+    x = "TR (post stimulus onset)", 
+    y = "sim(congr, congr) - sim(incon, congr)"
+    ) +
+  theme(legend.position = "none")
+
+
+vanil.me.group %>%
+
+  filter(glm == "1tr1knot", measure == "neg.eucl", param == "intercept", norma == "raw") %>%
+
+  ggplot(aes(tr, m)) +
+  geom_line(aes(group = parcel, color = network), size = 1) +
+  facet_grid(vars(network), vars(session)) +
+  geom_hline(yintercept = 0) +
+
+  scale_color_brewer(type = "qual", palette = 1) +
+  # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
+  # scale_y_continuous(limits = c(-0.5, 0.2)) +
+
+  labs(
+    title = "simil measure: neg. euclidean",
+    x = "TR (post stimulus onset)", 
+    y = "sim(congr, congr) - sim(incon, congr)"
+    ) +
+  theme(legend.position = "none")
+
+vanil.me.group %>%
+
+  filter(glm == "1tr1knot", measure == "neg.eucl", param == "intercept", norma == "prw") %>%
+
+  ggplot(aes(tr, m)) +
+  geom_line(aes(group = parcel, color = network), size = 1) +
+  facet_grid(vars(network), vars(session)) +
+  geom_hline(yintercept = 0) +
+
+  scale_color_brewer(type = "qual", palette = 1) +
+  # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
+  # scale_y_continuous(limits = c(-0.5, 0.2)) +
+
+  labs(
+    title = "simil measure: prewhitened neg. euclidean", 
+    x = "TR (post stimulus onset)",
+    y = "sim(congr, congr) - sim(incon, congr)"
+    ) +
+  theme(legend.position = "none")
+
+
+vanil.me.group %>%
+
+  filter(glm == "1tr1knot", measure == "neg.neuc", param == "intercept", norma == "raw") %>%
+
+  ggplot(aes(tr, m)) +
+  geom_line(aes(group = parcel, color = network), size = 1) +
+  facet_grid(vars(network), vars(session)) +
+  geom_hline(yintercept = 0) +
+
+  scale_color_brewer(type = "qual", palette = 1) +
+  # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
+  # scale_y_continuous(limits = c(-0.5, 0.2)) +
+
+  labs(
+    title = "simil measure: neg. normalized euclidean",
+    x = "TR (post stimulus onset)", 
+    y = "sim(congr, congr) - sim(incon, congr)"
+    ) +
+  theme(legend.position = "none")
+
+vanil.me.group %>%
+
+  filter(glm == "1tr1knot", measure == "neg.neuc", param == "intercept", norma == "prw") %>%
+
+  ggplot(aes(tr, m)) +
+  geom_line(aes(group = parcel, color = network), size = 1) +
+  facet_grid(vars(network), vars(session)) +
+  geom_hline(yintercept = 0) +
+
+  scale_color_brewer(type = "qual", palette = 1) +
+  # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
+  # scale_y_continuous(limits = c(-0.5, 0.2)) +
+
+  labs(
+    title = "simil measure: prewhitened neg. normalized euclidean", 
+    x = "TR (post stimulus onset)",
+    y = "sim(congr, congr) - sim(incon, congr)"
+    ) +
+  theme(legend.position = "none")
+
+
+```
+
+
+## Run contrast per session (PC50 items only)
+
+```{r vanil_plot_run, fig.height = 6, fig.width = 15}
+
+## congruency
+
+vanil.me.group %>%
+
+  filter(glm == "1tr1knot", measure == "corr", param == "intercept", norma == "raw") %>%
+
+  ggplot(aes(tr, m)) +
+  geom_line(aes(group = parcel, color = network), size = 1) +
+  facet_grid(vars(network), vars(session)) +
+  geom_hline(yintercept = 0) +
+
+  scale_color_brewer(type = "qual", palette = 1) +
+  # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
+  # scale_y_continuous(limits = c(-0.5, 0.2)) +
+
+  labs(
+    title = "simil measure: correlation", 
+    x = "TR (post stimulus onset)",
+    y = "sim(within-run) - sim(incon, congr)"
+    ) +
+  theme(legend.position = "none")
+
+
+vanil.me.group %>%
+
+  filter(glm == "1tr1knot", measure == "corr", param == "intercept", norma == "prw") %>%
+
+  ggplot(aes(tr, m)) +
+  geom_line(aes(group = parcel, color = network), size = 1) +
+  facet_grid(vars(network), vars(session)) +
+  geom_hline(yintercept = 0) +
+
+  scale_color_brewer(type = "qual", palette = 1) +
+  # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
+  # scale_y_continuous(limits = c(-0.5, 0.2)) +
+
+  labs(
+    title = "simil measure: prewhitened correlation", 
+    x = "TR (post stimulus onset)", 
+    y = "sim(within-run) - sim(incon, congr)"
+    ) +
+  theme(legend.position = "none")
+
+
+vanil.me.group %>%
+
+  filter(glm == "1tr1knot", measure == "neg.eucl", param == "intercept", norma == "raw") %>%
+
+  ggplot(aes(tr, m)) +
+  geom_line(aes(group = parcel, color = network), size = 1) +
+  facet_grid(vars(network), vars(session)) +
+  geom_hline(yintercept = 0) +
+
+  scale_color_brewer(type = "qual", palette = 1) +
+  # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
+  # scale_y_continuous(limits = c(-0.5, 0.2)) +
+
+  labs(
+    title = "simil measure: neg. euclidean",
+    x = "TR (post stimulus onset)", 
+    y = "sim(within-run) - sim(incon, congr)"
+    ) +
+  theme(legend.position = "none")
+
+vanil.me.group %>%
+
+  filter(glm == "1tr1knot", measure == "neg.eucl", param == "intercept", norma == "prw") %>%
+
+  ggplot(aes(tr, m)) +
+  geom_line(aes(group = parcel, color = network), size = 1) +
+  facet_grid(vars(network), vars(session)) +
+  geom_hline(yintercept = 0) +
+
+  scale_color_brewer(type = "qual", palette = 1) +
+  # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
+  # scale_y_continuous(limits = c(-0.5, 0.2)) +
+
+  labs(
+    title = "simil measure: prewhitened neg. euclidean", 
+    x = "TR (post stimulus onset)",
+    y = "sim(within-run) - sim(incon, congr)"
+    ) +
+  theme(legend.position = "none")
+
+
+vanil.me.group %>%
+
+  filter(glm == "1tr1knot", measure == "neg.neuc", param == "intercept", norma == "raw") %>%
+
+  ggplot(aes(tr, m)) +
+  geom_line(aes(group = parcel, color = network), size = 1) +
+  facet_grid(vars(network), vars(session)) +
+  geom_hline(yintercept = 0) +
+
+  scale_color_brewer(type = "qual", palette = 1) +
+  # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
+  # scale_y_continuous(limits = c(-0.5, 0.2)) +
+
+  labs(
+    title = "simil measure: neg. normalized euclidean",
+    x = "TR (post stimulus onset)", 
+    y = "sim(within-run) - sim(incon, congr)"
+    ) +
+  theme(legend.position = "none")
+
+vanil.me.group %>%
+
+  filter(glm == "1tr1knot", measure == "neg.neuc", param == "intercept", norma == "prw") %>%
+
+  ggplot(aes(tr, m)) +
+  geom_line(aes(group = parcel, color = network), size = 1) +
+  facet_grid(vars(network), vars(session)) +
+  geom_hline(yintercept = 0) +
+
+  scale_color_brewer(type = "qual", palette = 1) +
+  # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
+  # scale_y_continuous(limits = c(-0.5, 0.2)) +
+
+  labs(
+    title = "simil measure: prewhitened neg. normalized euclidean", 
+    x = "TR (post stimulus onset)",
+    y = "sim(within-run) - sim(incon, congr)"
+    ) +
+  theme(legend.position = "none")
+
+
+```
+
+
+
+
+
+```{r }
+# ## all cross-run correlations, all within pc50 items:
+# ##   - congruent--incongruent correlation (intercept) is approximately equal across sessions
+# ##   - incongruent--incongruent correlaion is positive and higher across the board in proactive versus baseline
+# ##   - congruent--congruent correlation is negative and lower across the board in proactive verus baseline
+# 
+# ## something is wrong with the proactive session results.
+# ##  - model fitting procedure?
+# ##  - RDMs?
+# ##  - GLMs?
+# ##  ...
+# 
+# 
+# 
+# 
+# 
+# 
+# 
+# 
+# 
+# vanil.me.group %>%
+#   filter(glm == "2tr1knot", measure == "corr", norma == "raw", param == "incon", session == "proactive", p.fdr < 0.05)
+# 
+# 
+# vanil.me.group %>%
+#   filter(p.fdr < 0.05)
+# 
+# apply(vanil.1tr1knot[, , "raw", , , , "baseline", "corr"], c(".row", ".col"), mean) %>% qcor
+# apply(vanil.1tr1knot[, , "raw", , , , "proactive", "corr"], c(".row", ".col"), mean) %>% qcor
+# 
+# p <- apply(vanil.1tr1knot[, , "raw", , , , "proactive", "corr"], c(".row", ".col"), mean)
+# p <- p[is.pc50, ]
+# p <- p[, is.pc50]
+# qcor(p)
+# 
+# b <- apply(vanil.1tr1knot[, , "raw", , , , "baseline", "corr"], c(".row", ".col"), mean)
+# b <- b[is.pc50, ]
+# b <- b[, is.pc50]
+# qcor(b)
+# 
+# 
+# b1 <- apply(vanil.1tr1knot[, , "raw", , , 1, "baseline", "corr"], c(".row", ".col"), mean)
+# qcor(b1)
+# 
+# names(dimnames(vanil.1tr1knot))
+# 
+# 
+# qcor(mlist$run)
+# qcor(mlist$bias.any)
+# 
+# qcor((1 - mlist$bias.any) * (1 - mlist$run) * mlist$incon *  (1 - mlist$congr))
+# 
+# qcor((1 - mlist$bias.any) * (1 - mlist$run) * (1 - mlist$incon) *  (1 - mlist$congr))
+# 
+# 
+# 
+# 
+# 
+# 
+# 
+# 
+# vanil.x.group %>%
+#   
+#   filter(glm == "1tr1knot", measure == "corr") %>%
+#   
+#   ggplot(aes(tr, p)) +
+#   geom_line(aes(group = parcel, color = network), size = 1) +
+#   facet_grid(vars(network), vars(norma)) +
+#   geom_hline(yintercept = 0) +
+#   
+#   scale_color_brewer(type = "qual", palette = 1)
+#   scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
+#   scale_y_continuous(limits = c(-1, 3)) +
+#   
+#   labs(title = "1 TR / knot", x = "TR (post stimulus onset)", y = "beta") +
+#   theme(legend.position = "none")
+#   
+# 
+#   
+#   
+#   
+# vanil.omnibus.group %>%
+#   
+#   filter(glm == "2tr1knot") %>%
+#   
+#   mutate(session.run = paste0(session, " ", run)) %>%
+#   
+#   ggplot(aes(tr, m)) +
+#   geom_line(aes(group = parcel, color = network), size = 1) +
+#   facet_grid(vars(network), vars(session.run)) +
+#   geom_hline(yintercept = 0) +
+#   
+#   scale_color_brewer(type = "qual", palette = 1)
+#   scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
+#   scale_y_continuous(limits = c(-1, 3)) +
+#   
+#   labs(title = "2 TR / knot", x = "TR (post stimulus onset)", y = "beta") +
+#   theme(legend.position = "none")
+# 
+# 
+# grid.arrange(
+#   p.marginal.1tr1knot, p.marginal.2tr1knot, 
+#   top = "parcel-wise mean activation (across all event estimates)",
+#   ncol = 2
+#   )
+# 
 
 ```
