@@ -44,14 +44,6 @@ pretrial.subjsum <- fread(here("data", "pretrial_subjsumm.csv"))  ## summary of 
 
 ## paths ----
 
-dir.ccp.hcp <- "/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/HCP_SUBJECTS_BACKUPS/AFNI_ANALYSIS"
-dir.subsubj <- file.path("/data/nil-external/ccp/freund/sub-subj-glms/runwise_old")
-
-subjs <- intersect(
-  list.dirs(dir.subsubj, recursive = FALSE, full.names = FALSE),
-  list.dirs(dir.ccp.hcp, recursive = FALSE, full.names = FALSE)
-)
-
 sessi <- c("baseline", "proactive")
 sessi.short <- c("Bas", "Pro")
 glms <- "Congruency_EVENTS_censored"
@@ -59,26 +51,7 @@ n.knots <- 6
 regressors <- c("PC50InCon", "biasInCon", "PC50Con", "biasCon")
 networks <- c("Vis", "DorsAttn", "SalVentAttn", "Cont", "Default", "SomMot", "Limbic")
 
-## refine list of subjects
-
-## read this guy in just to get the subjs for which we presently have stats:
-means.2tr1knot <- abind(
-  readRDS(here("out", "rsa", "means_shaefer400_baseline_Congruency_EVENTS_censored.rds")),
-  readRDS(here("out", "rsa", "means_shaefer400_proactive_Congruency_EVENTS_censored.rds")),
-  rev.along = 0
-)
-names(dimnames(means.2tr1knot)) <- c("param", "run", "knot", "parcel", "subj", "session")
-has.stats <- apply(means.2tr1knot, "subj", function(.) !any(is.na(c(.))))
-rm(means.2tr1knot)
-
-subjs.with.stats <- names(has.stats)[has.stats]
-subjs.bad <- unique(pretrial.subjsum[subj.set == "bad"]$subj)
-subjs.good.with.stats <- setdiff(subjs.with.stats, subjs.bad)
-
-
 ## atlases ----
-
-# list.files("/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/ATLASES")
 
 parcellation <- read_atlas("schaefer400")
 
@@ -90,7 +63,6 @@ if (nodename == "ccplinux1") {
   dir.atlas <- "C:/local/atlases"
   dir.schaefer <- dir.atlas
 }
-
 
 hcp <- list(
   L  = readGIfTI(
@@ -106,152 +78,255 @@ over <- list(
   R = parcellation$atlas[(nrow(parcellation$atlas) / 2):nrow(parcellation$atlas)]
 )
 
-schaefer <- list(
-  L = read_gifti2matrix(
-    "/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/ATLASES/Schaefer2018_400Parcels_7Networks_order_L.label.gii"
-    ) %>% c,
-  R = read_gifti2matrix(
-    "/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/ATLASES/Schaefer2018_400Parcels_7Networks_order_R.label.gii"
-    ) %>% c
-)
+# schaefer <- list(
+#   L = read_gifti2matrix(
+#     "/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/ATLASES/Schaefer2018_400Parcels_7Networks_order_L.label.gii"
+#     ) %>% c,
+#   R = read_gifti2matrix(
+#     "/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/ATLASES/Schaefer2018_400Parcels_7Networks_order_R.label.gii"
+#     ) %>% c
+# )
+
+## stats ----
+
+
+a <- readRDS(here("out", "qc", paste0("similarity-to-ccphcp-glms_shaefer400_2tr1knot.rds")))
+
+## remove all NA subjs ----
+
+has.stats <- apply(a, "subj", function(.) !any(is.na(c(.))))
+a <- a[, , , , has.stats, ]
+
+## wrangle to data.frame ----
+
+d <- reshape2::melt(a, value.name = "simil") %>% rename(session = sess)
+
+d$tr <- as.numeric(gsub("knot", "", d$knot)) * 2  ## knots to TRs
+
+d$network <- ""  ## add networks
+for (network.i in networks) d$network[grepl(network.i, d$roi)] <- network.i
+
+d$trial.type <- gsub("PC50|bias", "", d$param)  ## create variables
+d$pc <- gsub("InCon|Con", "", d$param)
+
+d$trial.type <- factor(d$trial.type, levels = c("Con", "InCon"))  ## to factors
+d$pc <- factor(d$pc, levels = c("PC50", "bias"))
+d$session <- factor(d$session, levels = c("baseline", "proactive"))
+
+
+
+```
+
+## all data (no aggregation)
+
+```{r}
+
+p.density.corr <- d %>%
+  filter(measu == "corr") %>%
+  ggplot(aes(x = simil)) +
+  geom_density(fill = "firebrick") +
+  facet_grid(vars(param), vars(session)) +
+  labs(x = "linear correlation")
+
+p.density.eucl <- d %>%
+  filter(measu == "eucl") %>%
+  ggplot(aes(x = simil)) +
+  geom_density(fill = "firebrick") +
+  facet_grid(vars(param), vars(session)) +
+  labs(x = "euclidean distance")
+
+grid.arrange(p.density.corr, p.density.eucl, ncol = 2, top = "pattern similarity across all parcels, knots, and subjs")
+
+p.boxplot.corr <- d %>%
+  filter(measu == "corr") %>%
+  ggplot(aes(y = simil)) +
+  geom_boxplot(fill = "firebrick", width = 0.25) +
+  facet_grid(vars(param), vars(session)) +
+  labs(y = "linear correlation")
+
+p.boxplot.eucl <- d %>%
+  filter(measu == "eucl") %>%
+  ggplot(aes(y = simil)) +
+  geom_boxplot(fill = "firebrick", width = 0.25) +
+  facet_grid(vars(param), vars(session)) +
+  labs(y = "euclidean distance")
+
+grid.arrange(p.boxplot.corr, p.boxplot.eucl, ncol = 2, top = "pattern similarity across all parcels, knots, and subjs")
+
+```
+
+## by TR (no aggregation)
+
+```{r}
+
+p.allparcels.pearson <- d %>%
+  filter(measu == "corr") %>%
+  ggplot(aes(tr, simil, group = tr)) +
+  geom_violin(width = 0.5, fill = "firebrick") +
+  facet_grid(vars(param), vars(session)) +
+  scale_x_continuous(breaks = 1:12) +
+  labs(title = "linear correlation", x = "TR (post stimulus onset)", y = "beta")
+
+p.allparcels.euclidean <- d %>%
+  filter(measu == "eucl") %>%
+  ggplot(aes(tr, simil, group = tr)) +
+  geom_violin(width = 0.5, fill = "firebrick") +
+  facet_grid(vars(param), vars(session)) +
+  scale_x_continuous(breaks = 1:12) +
+  labs(title = "euclidean distance", x = "TR (post stimulus onset)", y = "beta")
+
+grid.arrange(p.allparcels.pearson, p.allparcels.euclidean, ncol = 2, top = "all parcels")
+
+```
+
+Dissimilar patterns across all TRs, in all sessions.
+
+
+## by subject (aggregated across TR)
+
+```{r}
+
+d %>%
+  filter(measu == "corr") %>%
+  group_by(roi, param, session, subj) %>%
+  summarize(simil = tanh(mean(atanh(simil)))) %>%
+  ggplot(aes(subj, simil)) +
+  geom_boxplot(width = 0.5, fill = "firebrick") +
+  facet_grid(vars(param), vars(session)) +
+  labs(y = "linear correlation", x = "subj") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 0))
+
+d %>%
+  filter(measu == "eucl") %>%
+  group_by(roi, param, session, subj) %>%
+  summarize(simil = mean(simil)) %>%
+  ggplot(aes(subj, simil)) +
+  geom_boxplot(width = 0.5, fill = "firebrick") +
+  facet_grid(vars(param), vars(session)) +
+  labs(y = "euclidean distance", x = "subj") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0))
+
+
+```
+
+Seems to be relatively dissimilar patterns in each subject as well.
+
+
+## by parcel (aggregated across TR and subj)
+
+```{r}
+
+d %>%
+  filter(measu == "corr") %>%
+  group_by(roi, session, network, subj) %>%
+  summarize(simil = tanh(mean(atanh(simil)))) %>%
+  ggplot(aes(network, simil)) +
+  geom_boxplot(aes(fill = network), width = 0.5) +
+  scale_fill_brewer(type = "qual", palette = 2) +
+  facet_grid(cols = vars(session), scale = "free") +
+  labs(y = "linear correlation", x = "parcel") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0))
 
 ```
 
 
+## similarities of subjs with no errors
+
+```{r}
+
+errors <- pretrial %>%
+  group_by(subj, session) %>%
+  summarize(error = mean(1 - acc, na.rm = TRUE)) %>%
+  mutate(session = ifelse(session == "bas", "baseline", "proactive"))
+
+d %>%
+  filter(measu == "corr") %>%
+  group_by(subj, session, param) %>%
+  summarize(simil = tanh(mean(atanh(simil)))) %>%
+  inner_join(errors, by = c("subj", "session")) %>%
+  group_by(session, param) %>%
+  summarize(r = cor(error, simil, method = "spearman"))
+
+d %>%
+  filter(measu == "corr") %>%
+  # group_by(subj, session) %>%
+  group_by(subj, session, param) %>%
+  summarize(simil = tanh(mean(atanh(simil)))) %>%
+  inner_join(errors, by = c("subj", "session")) %>%
+  ggplot(aes(rank(error), rank(simil))) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  facet_grid(vars(param), vars(session))
+
+
+subjs.no.errors <- errors %>% 
+  filter(error == 0) %>%
+  with(table(subj)) %>%
+  as.data.frame %>%
+  filter(Freq == 2) %>% 
+  pull(subj) %>%
+  as.character
+
+
+d %>%
+  filter(measu == "corr", subj %in% subjs.no.errors) %>%
+  ggplot(aes(y = simil)) +
+  geom_boxplot() +
+  facet_grid(vars(session), vars(param)) +
+  labs(y = "linear correlation")
+
+
+
+
+d %>%
+  filter(measu == "corr", subj %in% subjs.no.errors) %>%
+  group_by(session, param, roi, network) %>%
+  summarize(simil = tanh(mean(atanh(simil)))) %>%
+  ggplot(aes(roi, simil)) +
+  geom_point(aes(color = network)) +
+  facet_grid(vars(param), vars(session)) +
+  labs(y = "linear correlation")
+
+
+
+d %>%
+  filter(measu == "corr", subj.no.errors) %>%
+  group_by(subj, session) %>%
+  # group_by(subj, session, param) %>%
+  summarize(simil = tanh(mean(atanh(simil)))) %>%
+  left_join(errors, by = c("subj", "session")) %>%
+  ggplot(aes(rank(error), rank(simil))) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  facet_grid(cols = vars(session))
+  # facet_grid(vars(param), vars(session))
+  
+  group_by(roi, session, network, param) %>%
+  summarize(simil = tanh(mean(atanh(simil)))) %>%
+  ggplot(aes(network, simil)) +
+  geom_boxplot(aes(fill = network), width = 0.5) +
+  scale_fill_brewer(type = "qual", palette = 2) +
+  facet_grid(cols = vars(session), scale = "free") +
+  labs(y = "linear correlation", x = "parcel") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0))
+
+
+
+
+
+```
+
+
+## lowest similarities
+
 ```{r}
 
 
-n.iter <- length(sessi) * length(subjs) * length(glms)
-pb <- progress_bar$new(
-  format = " running [:bar] :percent eta: :eta (elapsed: :elapsed)",
-  total = n.iter, clear = FALSE, width = 120
-)
-
-a <- array(
-  NA,
-  dim = c(
-    param  = length(regressors),
-    measu  = 2,
-    knot   = n.knots,
-    roi    = length(parcellation$key), 
-    subj   = length(subjs),
-    sess   = length(sessi)
-  ),
-  dimnames = list(
-    param  = regressors,
-    measu  = c("corr", "eucl"),
-    knot   = paste0("knot", seq_len(n.knots)),
-    roi    = parcellation$key, 
-    subj   = subjs,
-    sess   = sessi
-    )
-)
+d %>%
+  filter(measu == "corr", simil < 0.75) %>%
+  with(table(roi, param))
 
 
-for (sess.i in seq_along(sessi)) {
-  # sess.i = 1
-  
-  name.sess.i <- sessi[sess.i]
-
-    for (subj.i in seq_along(subjs)) {
-      ## subj.i = 1
-      
-      name.subj.i <- subjs[subj.i]
-      
-      ## read data ----
-      
-      ## build paths
-      
-      dir.subsubj.i <- file.path(
-        dir.subsubj, name.subj.i, "RESULTS", "Stroop", name.sess.i, 
-        paste0(name.sess.i, "_Congruency_EVENTS_censored")
-      )
-      dir.ccp.hcp.i <- file.path(
-        dir.ccp.hcp, name.subj.i, "SURFACE_RESULTS", "Stroop", 
-        paste0(name.sess.i, "_Congruency_EVENTS_censored")
-      )
-      
-      f.betas.subsubj <- c(
-        run1_R = file.path(paste0(dir.subsubj.i, "_run1"), paste0("betas_", subjs[subj.i], "_R.func.gii")),
-        run1_L = file.path(paste0(dir.subsubj.i, "_run1"), paste0("betas_", subjs[subj.i], "_L.func.gii")),
-        run2_R = file.path(paste0(dir.subsubj.i, "_run2"), paste0("betas_", subjs[subj.i], "_R.func.gii")),
-        run2_L = file.path(paste0(dir.subsubj.i, "_run2"), paste0("betas_", subjs[subj.i], "_L.func.gii"))
-      )
-      
-      f.betas.ccp.hcp <- c(
-        R = file.path(dir.ccp.hcp.i, paste0("STATS_", subjs[subj.i], "_REML_R.func.gii")),
-        L = file.path(dir.ccp.hcp.i, paste0("STATS_", subjs[subj.i], "_REML_L.func.gii"))
-      )
-      
-      
-      ## check existence
-      
-      file.is.missing <- any(!file.exists(f.betas.subsubj, f.betas.ccp.hcp))
-      if (file.is.missing) next
-      
-      
-      ## read into lists
-      
-      betas.subsubj.l <- vector("list", 4) %>% setNames(combo_paste(c("run1", "run2"), c("L", "R")))
-      betas.ccp.hcp.l <- vector("list", 2) %>% setNames(c("L", "R"))
-      
-      for (name.hemi.i in c("L", "R")) {
-        # name.hemi.i = "L"
-        
-        for (name.run.i in c("run1", "run2")) {
-          # name.run.i = "run1"
-          
-          name.run.hemi.i <- paste0(name.run.i, "_", name.hemi.i)
-          
-          betas.subsubj.l[[name.run.hemi.i]] <- collate_surface_params(
-            f.betas.subsubj[name.run.hemi.i], 
-            pattern = paste0(regressors, c("#[0-9]"), collapse = "|")
-          )
-        
-        }
-        
-        betas.ccp.hcp.l[[name.hemi.i]] <- collate_surface_params(
-          f.betas.ccp.hcp[name.hemi.i], 
-          pattern = paste0(regressors, c("#[0-9]_Coef"), collapse = "|")
-          )
-        
-      }
-
-      ## wrangle to same format
-      
-      betas.subsubj <- cbind(
-        betas.subsubj.l[["run1_L"]] + betas.subsubj.l[["run2_L"]],
-        betas.subsubj.l[["run1_R"]] + betas.subsubj.l[["run2_R"]]
-      ) / 2  ## average across run
-      
-      betas.ccp.hcp <- cbind(betas.ccp.hcp.l[["L"]], betas.ccp.hcp.l[["R"]])
-      
-      are.matched <-
-        identical(dim(betas.subsubj), dim(betas.ccp.hcp)) && 
-        identical(dimnames(betas.subsubj), dimnames(betas.ccp.hcp))
-      if (are.matched) stop("ccphcp and subsubj arrays not matched!")
-      
-      
-      ## calculate similarities ----
-      
-      ## TODO
-      
-      for (parcel.i in parcellation$key) {
-        
-        for (knot.i in seq_len(n.knots[name.glm.i])) {
-          # knot.i = 1
-          
-          
-  
-        }  ## knot loop end
-          
-      }  ## parcel loop end
-        
-
-        
-  }  ## subj loop end
-
-}  ## session loop end
 
 
 
