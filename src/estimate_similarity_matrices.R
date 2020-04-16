@@ -205,8 +205,8 @@ for (sess.i in seq_along(sessi)) {
           
           ## compute similarities
 
-          # n.cores <- detectCores()
-          n.cores <- 12
+          n.cores <- detectCores()
+          # n.cores <- 12
           cl <- makeCluster(n.cores - 1, type = "FORK")
           registerDoParallel(cl)
           

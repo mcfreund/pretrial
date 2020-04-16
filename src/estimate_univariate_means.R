@@ -134,7 +134,7 @@ for (sess.i in seq_along(sessi)) {
 
       betas <- abind(
         run1 = cbind(betas[["run1_L"]], betas[["run1_R"]]),
-        run2 = cbind(betas[["run2_L"]], betas[["run2_L"]]),
+        run2 = cbind(betas[["run2_L"]], betas[["run2_R"]]),
         rev.along = 0
       )
 
