@@ -155,24 +155,22 @@ grid.arrange(p.boxplot.corr, p.boxplot.eucl, ncol = 2, top = "pattern similarity
 
 ```
 
-## by TR (no aggregation)
+## by knot (no aggregation)
 
 ```{r}
 
 p.allparcels.pearson <- d %>%
   filter(measu == "corr") %>%
-  ggplot(aes(tr, simil, group = tr)) +
+  ggplot(aes(knot, simil)) +
   geom_violin(width = 0.5, fill = "firebrick") +
   facet_grid(vars(param), vars(session)) +
-  scale_x_continuous(breaks = 1:12) +
   labs(title = "linear correlation", x = "TR (post stimulus onset)", y = "beta")
 
 p.allparcels.euclidean <- d %>%
   filter(measu == "eucl") %>%
-  ggplot(aes(tr, simil, group = tr)) +
+  ggplot(aes(knot, simil)) +
   geom_violin(width = 0.5, fill = "firebrick") +
   facet_grid(vars(param), vars(session)) +
-  scale_x_continuous(breaks = 1:12) +
   labs(title = "euclidean distance", x = "TR (post stimulus onset)", y = "beta")
 
 grid.arrange(p.allparcels.pearson, p.allparcels.euclidean, ncol = 2, top = "all parcels")
@@ -194,7 +192,7 @@ d %>%
   geom_boxplot(width = 0.5, fill = "firebrick") +
   facet_grid(vars(param), vars(session)) +
   labs(y = "linear correlation", x = "subj") +
-  theme(axis.text.x = element_text(angle = 90, hjust = 0))
+  theme(axis.text.x = element_text(angle = 90, vjust = 0, hjust = 0.5))
 
 d %>%
   filter(measu == "eucl") %>%
@@ -204,12 +202,13 @@ d %>%
   geom_boxplot(width = 0.5, fill = "firebrick") +
   facet_grid(vars(param), vars(session)) +
   labs(y = "euclidean distance", x = "subj") +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0))
+  theme(axis.text.x = element_text(angle = 90, vjust = 0, hjust = 0.5))
 
 
 ```
 
 Seems to be relatively dissimilar patterns in each subject as well.
+Perhaps some variability by subject\*session.
 
 
 ## by parcel (aggregated across TR and subj)
@@ -218,14 +217,14 @@ Seems to be relatively dissimilar patterns in each subject as well.
 
 d %>%
   filter(measu == "corr") %>%
-  group_by(roi, session, network, subj) %>%
+  group_by(roi, session, subj, network) %>%
   summarize(simil = tanh(mean(atanh(simil)))) %>%
-  ggplot(aes(network, simil)) +
-  geom_boxplot(aes(fill = network), width = 0.5) +
+  ggplot(aes(roi, simil)) +
+  geom_boxplot(aes(fill = network)) +
   scale_fill_brewer(type = "qual", palette = 2) +
-  facet_grid(cols = vars(session), scale = "free") +
+  facet_grid(rows = vars(session), scale = "free") +
   labs(y = "linear correlation", x = "parcel") +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0))
+  theme(axis.text.x = element_text(angle = 90, vjust = 0, hjust = 0.5))
 
 ```
 
@@ -249,14 +248,13 @@ d %>%
 
 d %>%
   filter(measu == "corr") %>%
-  # group_by(subj, session) %>%
   group_by(subj, session, param) %>%
   summarize(simil = tanh(mean(atanh(simil)))) %>%
   inner_join(errors, by = c("subj", "session")) %>%
   ggplot(aes(rank(error), rank(simil))) +
   geom_point() +
   geom_smooth(method = "lm") +
-  facet_grid(vars(param), vars(session))
+  facet_grid(vars(session), vars(param))
 
 
 subjs.no.errors <- errors %>% 
@@ -275,7 +273,9 @@ d %>%
   facet_grid(vars(session), vars(param)) +
   labs(y = "linear correlation")
 
-
+d %>%
+  filter(measu == "corr", subj %in% subjs.no.errors) %>%
+  View
 
 
 d %>%
@@ -290,7 +290,7 @@ d %>%
 
 
 d %>%
-  filter(measu == "corr", subj.no.errors) %>%
+  filter(measu == "corr", subj %in% subjs.no.errors) %>%
   group_by(subj, session) %>%
   # group_by(subj, session, param) %>%
   summarize(simil = tanh(mean(atanh(simil)))) %>%
@@ -300,15 +300,6 @@ d %>%
   geom_smooth(method = "lm") +
   facet_grid(cols = vars(session))
   # facet_grid(vars(param), vars(session))
-  
-  group_by(roi, session, network, param) %>%
-  summarize(simil = tanh(mean(atanh(simil)))) %>%
-  ggplot(aes(network, simil)) +
-  geom_boxplot(aes(fill = network), width = 0.5) +
-  scale_fill_brewer(type = "qual", palette = 2) +
-  facet_grid(cols = vars(session), scale = "free") +
-  labs(y = "linear correlation", x = "parcel") +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0))
 
 
 
@@ -317,18 +308,90 @@ d %>%
 ```
 
 
-## lowest similarities
+## simulation
+
 
 ```{r}
 
 
-d %>%
-  filter(measu == "corr", simil < 0.75) %>%
-  with(table(roi, param))
+nsim <- 1E5
+
+set.seed(0)
+n <- 100
+X <- cbind(1, rnorm(x))
+signal <- x*2 + 10
+split1 <- sample.int(n, n/2)
+split2 <- -split1
+
+b.full <- matrix(NA, nrow = nsim, ncol = 2)
+colnames(b.full) <- c("b0", "b1")
+  
+b.piecewise <- matrix(NA, nrow = nsim, ncol = 2)
+colnames(b.piecewise) <- c("int", "x")
+  
+for (ii in seq_len(nsim)) {
+  
+  y <- signal + rnorm(n)
+
+  b.full[ii, ] <- coef(.lm.fit(X, y))
+  
+  coef.split1 <- coef(.lm.fit(X[split1, ], y[split1]))
+  coef.split2 <- coef(.lm.fit(X[split2, ], y[split2]))
+  
+  b.piecewise[ii, ] <- (coef.split1 + coef.split2) / 2
+  
+}
+
+  
+## means
+
+colMeans(b.full)
+colMeans(b.piecewise)
+
+colMeans(b.full) - colMeans(b.piecewise)
+
+## variance
+
+apply(b.full, 2, var)
+apply(b.piecewise, 2, var)
+
+apply(b.piecewise, 2, var) - apply(b.full, 2, var)
+
+
+cor(b.piecewise, b.full)
+
+plot(b.piecewise[, 1], b.full[, 1])
+plot(b.piecewise[, 2], b.full[, 2])
 
 
 
 
+```
+
+Piecewise method is unbiased but estimates have larger variance.
+Question: is this increase in variance substantial enough to explain the low correlations observed?
+
+## modeling
+
+```{r}
+
+d1 <- d %>% 
+  filter(measu == "corr") %>%
+  group_by(param, roi, subj, session) %>%
+  summarize(simil = mean(atanh(simil)))
+
+fit1 <- lm(simil ~ param + roi + subj + session, d1)
+
+fit.0subj <- update(fit1, . ~ . - subj)
+fit.0roi <- update(fit1, . ~ . - roi)
+fit.0sess <- update(fit1, . ~ . - session)
+fit.0param <- update(fit1, . ~ . - param)
+
+
+anova(fit1, fit.0subj)  ## variability across subjs
+anova(fit1, fit.0roi)  ## across rois
+anova(fit1, fit.0sess)  ## no session diffs
+anova(fit1, fit.0param)  ## across params
 
 
 ```

@@ -134,7 +134,7 @@ subjs.bad <- unique(pretrial.subjsum[subj.set == "bad"]$subj)
 
 ## filter by those with data
 
-has.stats <- apply(means.2tr1knot, "subj", function(.) !any(is.na(c(.))))
+has.stats <- apply(r.2tr1knot, "subj", function(.) !any(is.na(c(.))))
 subjs.with.stats <- names(has.stats)[has.stats]
 
 ## TODO
