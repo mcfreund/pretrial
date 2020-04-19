@@ -210,10 +210,6 @@ for (sess.i in seq_along(sessi)) {
       
       ## estimation ----
       
-      ## initialize:
-      
-      counts.silent.subj.i <- counts.silent[subj == name.subj.i & session == name.sess.i & glm == name.glm.i, ]
-  
       cl <- makeCluster(n.cores - 1, type = "FORK")
       registerDoParallel(cl)
       
@@ -234,11 +230,7 @@ for (sess.i in seq_along(sessi)) {
         betas.i <- betas.i[, !is.silent, ]
         if (need.to.calc.invcov) resid.i <- resid.i[, !is.silent, ]
         
-        
-        ## count vertices
-        
         n.vert <- ncol(betas.i)  ## number responsive vertices
-        counts.silent.subj.i[roi == name.roi.i]$n <- sum(is.silent)  ## number unresponsive
         
         ## initialize array slices
         
@@ -358,7 +350,7 @@ for (sess.i in seq_along(sessi)) {
         l <- setNames(vector("list", length(rsatypes) + 1), c(rsatypes, "counts.silent"))
         if ("vanilla" %in% rsatypes) l$vanilla <- r.vn.subj.i.roi.i
         if ("crossva" %in% rsatypes) l$crossva <- r.cv.subj.i.roi.i
-        l$counts.silent <- counts.silent.subj.i
+        l$counts.silent <- sum(is.silent)
         
         l  ## return results from cluster
         
@@ -377,7 +369,7 @@ for (sess.i in seq_along(sessi)) {
         counts.silent[
           subj == name.subj.i & session == name.sess.i & glm == name.glm.i & roi == parcellation$key[roi.i]
           ]$n <- 
-          results.subj.i[[roi.i]]$counts.silent$n
+          results.subj.i[[roi.i]]$counts.silent
         
       }
       
