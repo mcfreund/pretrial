@@ -170,7 +170,7 @@ for (sess.i in seq_along(sessi)) {
     
     ## save ----    
     
-    saveRDS(r.un, here("out", "rsa", paste0("means_shaefer400_", name.sess.i, "_", name.glm.i, ".rds")))
+    saveRDS(r.un, here("out", "univa", paste0("means_shaefer400_", name.sess.i, "_", name.glm.i, ".rds")))
       
   }  ## glm loop end
   
