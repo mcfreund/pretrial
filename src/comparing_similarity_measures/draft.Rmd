@@ -4,17 +4,17 @@ author: "michael freund"
 date: "09 April 2020"
 output:
   html_document:
-    toc: true
-    highlight: zenburn
+  toc: true
+highlight: zenburn
 ---
-
+  
 ```{r setup, include = FALSE}
 
 knitr::opts_chunk$set(
   cache = TRUE, echo = FALSE, warning = FALSE, message = FALSE,
   fig.align = 'center',
   fig.width = 11.5, fig.fullwidth = TRUE
-  )
+)
 
 set.seed(0)
 
@@ -45,50 +45,9 @@ theme_set(theme_classic(base_size = 8))
 pretrial <- fread(here("data", "pretrial_behavior.csv"))
 pretrial.subjsum <- fread(here("data", "pretrial_subjsumm.csv"))
 
-## parcel-wise means
-
-means.1tr1knot <- abind(
-  readRDS(here("out", "rsa", "means_shaefer400_baseline_Congruency_EVENTS_tentzero01210_censored.rds")),
-  readRDS(here("out", "rsa", "means_shaefer400_proactive_Congruency_EVENTS_tentzero01210_censored.rds")),
-  rev.along = 0
-)
-names(dimnames(means.1tr1knot)) <- c("param", "run", "knot", "parcel", "subj", "session")
-dimnames(means.1tr1knot)$session <- c("baseline", "proactive")
-
-means.2tr1knot <- abind(
-  readRDS(here("out", "rsa", "means_shaefer400_baseline_Congruency_EVENTS_censored.rds")),
-  readRDS(here("out", "rsa", "means_shaefer400_proactive_Congruency_EVENTS_censored.rds")),
-  rev.along = 0
-)
-names(dimnames(means.2tr1knot)) <- c("param", "run", "knot", "parcel", "subj", "session")
-dimnames(means.2tr1knot)$session <- c("baseline", "proactive")
-
 ## parcel-wise similarity matrices
 
 ## vanilla RSA
-
-vanil.2tr1knot <- abind(
-  abind(
-    readRDS(here("out", "rsa", "rmatrix_vanilla_corr_shaefer400_baseline_Congruency_EVENTS_censored.rds")),
-    readRDS(here("out", "rsa", "rmatrix_vanilla_corr_shaefer400_proactive_Congruency_EVENTS_censored.rds")),
-    rev.along = 0
-  ),
-  -abind(
-    readRDS(here("out", "rsa", "rmatrix_vanilla_eucl_shaefer400_baseline_Congruency_EVENTS_censored.rds")),
-    readRDS(here("out", "rsa", "rmatrix_vanilla_eucl_shaefer400_proactive_Congruency_EVENTS_censored.rds")),
-    rev.along = 0
-  ),
-  -abind(
-    readRDS(here("out", "rsa", "rmatrix_vanilla_neuc_shaefer400_baseline_Congruency_EVENTS_censored.rds")),
-    readRDS(here("out", "rsa", "rmatrix_vanilla_neuc_shaefer400_proactive_Congruency_EVENTS_censored.rds")),
-    rev.along = 0
-  ),
-  rev.along = 0
-)
-
-names(dimnames(vanil.2tr1knot)) <- c(".row", ".col", "norma", "knot", "parcel", "subj", "session", "measure")
-dimnames(vanil.2tr1knot)$session <- c("baseline", "proactive")
-dimnames(vanil.2tr1knot)$measure <- c("corr", "neg.eucl", "neg.neuc")
 
 vanil.1tr1knot <- abind(
   abind(
@@ -113,14 +72,28 @@ names(dimnames(vanil.1tr1knot)) <- c(".row", ".col", "norma", "knot", "parcel", 
 dimnames(vanil.1tr1knot)$session <- c("baseline", "proactive")
 dimnames(vanil.1tr1knot)$measure <- c("corr", "neg.eucl", "neg.neuc")
 
+cross.1tr1knot <- abind(
+  abind(
+    readRDS(here("out", "rsa", "rmatrix_crossva_corr_shaefer400_baseline_Congruency_EVENTS_tentzero01210_censored.rds")),
+    # readRDS(here("out", "rsa", "rmatrix_crossva_corr_shaefer400_proactive_Congruency_EVENTS_tentzero01210_censored.rds")),
+    rev.along = 0
+  ),
+  -abind(
+    readRDS(here("out", "rsa", "rmatrix_crossva_eucl_shaefer400_baseline_Congruency_EVENTS_tentzero01210_censored.rds")),
+    # readRDS(here("out", "rsa", "rmatrix_crossva_eucl_shaefer400_proactive_Congruency_EVENTS_tentzero01210_censored.rds")),
+    rev.along = 0
+  ),
+  -abind(
+    readRDS(here("out", "rsa", "rmatrix_crossva_neuc_shaefer400_baseline_Congruency_EVENTS_tentzero01210_censored.rds")),
+    # readRDS(here("out", "rsa", "rmatrix_crossva_neuc_shaefer400_proactive_Congruency_EVENTS_tentzero01210_censored.rds")),
+    rev.along = 0
+  ),
+  rev.along = 0
+)
 
-# vanil.2tr1knot.d <- reshape2::melt(vanil.2tr1knot, value.name = "m") %>% mutate(glm = "2tr1knot")
-# vanil.1tr1knot.d <- reshape2::melt(vanil.1tr1knot, value.name = "m") %>% mutate(glm = "1tr1knot")
-# vanil.2tr1knot.d$tr <- as.numeric(gsub("knot", "", means.2tr1knot.d$knot)) * 2  ## knots to TRs
-# vanil.1tr1knot.d$tr <- as.numeric(gsub("knot", "", means.1tr1knot.d$knot))
-# vanil.d <- rbind(means.2tr1knot.d, means.1tr1knot.d)  ## bind different glms
-# vanil.d$network <- ""  ## add networks
-# for (network.i in networks) means.d$network[grepl(network.i, means.d$parcel)] <- network.i
+names(dimnames(cross.1tr1knot)) <- c(".row", ".col", "norma", "knot", "parcel", "subj", "session", "measure")
+dimnames(cross.1tr1knot)$session <- c("baseline", "proactive")
+dimnames(cross.1tr1knot)$measure <- c("corr", "neg.eucl", "neg.neuc")
 
 ## variables ----
 
@@ -218,16 +191,16 @@ if (nodename == "ccplinux1") {
 hcp <- list(
   L  = readGIfTI(
     file.path(dir.atlas, "surf", "HCP_S1200_GroupAvg_v1", "S1200.L.midthickness_MSMAll.32k_fs_LR.surf.gii")
-    ),
+  ),
   R = readGIfTI(
     file.path(dir.atlas, "surf", "HCP_S1200_GroupAvg_v1", "S1200.R.midthickness_MSMAll.32k_fs_LR.surf.gii")
-    )
+  )
 )
 
 over <- list(
   L = parcellation$atlas[1:(nrow(parcellation$atlas) / 2)], 
   R = parcellation$atlas[(nrow(parcellation$atlas) / 2):nrow(parcellation$atlas)]
-  )
+)
 
 # schaefer <- list(
 #   L = read_gifti2matrix(
@@ -353,7 +326,7 @@ grid.arrange(
   p.marginal.1tr1knot, p.marginal.2tr1knot, 
   top = "parcel-wise mean activation (across all event estimates)",
   ncol = 2
-  )
+)
 
 
 ```
@@ -396,7 +369,7 @@ grid.arrange(
   p.marginal.1tr1knot.sd, p.marginal.2tr1knot.sd, 
   top = "parcel-wise standard deviation in activation (across subjects)",
   ncol = 2
-  )
+)
 
 
 ```
@@ -421,7 +394,7 @@ coef.means.me %>%
   geom_beeswarm(
     aes(fill = network, alpha = p.fdr < 0.05, color = ifelse(p.fdr < 0.05, "black", "white")), 
     size = 1.5, shape = 21
-    ) +
+  ) +
   scale_color_identity() +
   scale_alpha_manual(values = c("TRUE" = 1, "FALSE" = 0.2)) +
   facet_grid(vars(network), vars(session)) +
@@ -439,7 +412,7 @@ coef.means.me %>%
   geom_beeswarm(
     aes(fill = network, alpha = p.fdr < 0.05, color = ifelse(p.fdr < 0.05, "black", "white")), 
     size = 1.5, shape = 21
-    ) +
+  ) +
   scale_color_identity() +
   scale_alpha_manual(values = c("TRUE" = 1, "FALSE" = 0.2)) +
   facet_grid(vars(network), vars(session)) +
@@ -457,7 +430,7 @@ coef.means.me %>%
   geom_beeswarm(
     aes(fill = network, alpha = p.fdr < 0.05, color = ifelse(p.fdr < 0.05, "black", "white")), 
     size = 1.5, shape = 21
-    ) +
+  ) +
   scale_color_identity() +
   scale_alpha_manual(values = c("TRUE" = 1, "FALSE" = 0.2)) +
   facet_grid(vars(network), vars(session)) +
@@ -475,7 +448,7 @@ coef.means.me %>%
   geom_beeswarm(
     aes(fill = network, alpha = p.fdr < 0.05, color = ifelse(p.fdr < 0.05, "black", "white")), 
     size = 1.5, shape = 21
-    ) +
+  ) +
   scale_color_identity() +
   scale_alpha_manual(values = c("TRUE" = 1, "FALSE" = 0.2)) +
   facet_grid(vars(network), vars(session)) +
@@ -586,10 +559,10 @@ Filled in circles now indicate p(uncorrected) < 0.05. (No parcels were significa
 coef.means.x %>%
   filter(term == "sessionproactive:trial.typeInCon", glm == "1tr1knot") %>%
   ggplot(aes(tr, statistic)) +
-    geom_beeswarm(
+  geom_beeswarm(
     aes(fill = network, alpha = p.value < 0.05, color = ifelse(p.value < 0.05, "black", "white")), 
     size = 1.5, shape = 21
-    ) +
+  ) +
   scale_color_identity() +
   scale_alpha_manual(values = c("TRUE" = 1, "FALSE" = 0.2)) +
   facet_grid(vars(network)) +
@@ -650,13 +623,13 @@ vanil.1tr1knot.lt <- apply(
   vanil.1tr1knot, 
   c("norma", "knot", "parcel", "subj", "session", "measure"), 
   function(x) x[lt]
-  )  ## unwrap to lower triangle
+)  ## unwrap to lower triangle
 
 vanil.2tr1knot.lt <- apply(
   vanil.2tr1knot, 
   c("norma", "knot", "parcel", "subj", "session", "measure"), 
   function(x) x[lt]
-  )  ## unwrap to lower triangle
+)  ## unwrap to lower triangle
 
 ## fisher transform correlations
 
@@ -686,7 +659,7 @@ vanil.1tr1knot.subj.omnibus <- apply(
   vanil.1tr1knot.lt, 
   c("norma", "knot", "parcel", "subj", "session", "measure"),
   function(y) .lm.fit(X.omnibus, y)$coef
-  )  ## fit
+)  ## fit
 dimnames(vanil.1tr1knot.subj.omnibus)[[1]] <- colnames(X.omnibus)
 names(dimnames(vanil.1tr1knot.subj.omnibus))[[1]] <- "param"
 
@@ -694,7 +667,7 @@ vanil.2tr1knot.subj.omnibus <- apply(
   vanil.2tr1knot.lt, 
   c("norma", "knot", "parcel", "subj", "session", "measure"),
   function(y) .lm.fit(X.omnibus, y)$coef
-  )  ## fit
+)  ## fit
 dimnames(vanil.2tr1knot.subj.omnibus)[[1]] <- colnames(X.omnibus)
 names(dimnames(vanil.2tr1knot.subj.omnibus))[[1]] <- "param"
 
@@ -713,7 +686,7 @@ vanil.1tr1knot.subj.inconub <- apply(
   vanil.1tr1knot.lt, 
   c("norma", "knot", "parcel", "subj", "session", "measure"),
   function(y) .lm.fit(X.inconub, y)$coef
-  )  ## fit
+)  ## fit
 dimnames(vanil.1tr1knot.subj.inconub)[[1]] <- colnames(X.inconub)
 names(dimnames(vanil.1tr1knot.subj.inconub))[[1]] <- "param"
 
@@ -721,7 +694,7 @@ vanil.2tr1knot.subj.inconub <- apply(
   vanil.2tr1knot.lt, 
   c("norma", "knot", "parcel", "subj", "session", "measure"),
   function(y) .lm.fit(X.inconub, y)$coef
-  )  ## fit
+)  ## fit
 dimnames(vanil.2tr1knot.subj.inconub)[[1]] <- colnames(X.inconub)
 names(dimnames(vanil.2tr1knot.subj.inconub))[[1]] <- "param"
 
@@ -786,34 +759,34 @@ These curves are across all items (bias + pc50)
 ## omnibus
 
 vanil.omnibus.group %>%
-
+  
   filter(glm == "1tr1knot", measure == "corr", norma == "raw", param == "ond") %>%
-
+  
   ggplot(aes(tr, m)) +
   geom_line(aes(group = parcel, color = network), size = 1) +
   facet_grid(vars(network), vars(session)) +
   geom_hline(yintercept = 0) +
-
+  
   scale_color_brewer(type = "qual", palette = 1) +
   # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
   # scale_y_continuous(limits = c(-1, 3)) +
-
+  
   labs(title = "mean cross-run reliability", x = "TR (post stimulus onset)", y = "z") +
   theme(legend.position = "none")
 
 vanil.omnibus.group %>%
-
+  
   filter(glm == "1tr1knot", measure == "corr", norma == "raw", param == "diff") %>%
-
+  
   ggplot(aes(tr, m)) +
   geom_line(aes(group = parcel, color = network), size = 1) +
   facet_grid(vars(network), vars(session)) +
   geom_hline(yintercept = 0) +
-
+  
   scale_color_brewer(type = "qual", palette = 1) +
   # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
   # scale_y_continuous(limits = c(-1, 3)) +
-
+  
   labs(title = "mean reliability - mean off-diagonal", x = "TR (post stimulus onset)", y = "z") +
   theme(legend.position = "none")
 
@@ -827,126 +800,126 @@ vanil.omnibus.group %>%
 ## incongruency
 
 vanil.me.group %>%
-
+  
   filter(glm == "1tr1knot", measure == "corr", param == "incon", norma == "raw") %>%
-
+  
   ggplot(aes(tr, m)) +
   geom_line(aes(group = parcel, color = network), size = 1) +
   facet_grid(vars(network), vars(session)) +
   geom_hline(yintercept = 0) +
-
+  
   scale_color_brewer(type = "qual", palette = 1) +
   # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
   # scale_y_continuous(limits = c(-0.5, 0.2)) +
-
+  
   labs(
     title = "simil measure: correlation", 
     x = "TR (post stimulus onset)",
     y = "sim(incon, incon) - sim(incon, congr)"
-    ) +
+  ) +
   theme(legend.position = "none")
 
 
 vanil.me.group %>%
-
+  
   filter(glm == "1tr1knot", measure == "corr", param == "incon", norma == "prw") %>%
-
+  
   ggplot(aes(tr, m)) +
   geom_line(aes(group = parcel, color = network), size = 1) +
   facet_grid(vars(network), vars(session)) +
   geom_hline(yintercept = 0) +
-
+  
   scale_color_brewer(type = "qual", palette = 1) +
   # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
   # scale_y_continuous(limits = c(-0.5, 0.2)) +
-
+  
   labs(
     title = "simil measure: prewhitened correlation", 
     x = "TR (post stimulus onset)", 
     y = "sim(incon, incon) - sim(incon, congr)"
-    ) +
+  ) +
   theme(legend.position = "none")
 
 
 vanil.me.group %>%
-
+  
   filter(glm == "1tr1knot", measure == "neg.eucl", param == "incon", norma == "raw") %>%
-
+  
   ggplot(aes(tr, m)) +
   geom_line(aes(group = parcel, color = network), size = 1) +
   facet_grid(vars(network), vars(session)) +
   geom_hline(yintercept = 0) +
-
+  
   scale_color_brewer(type = "qual", palette = 1) +
   # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
   # scale_y_continuous(limits = c(-0.5, 0.2)) +
-
+  
   labs(
     title = "simil measure: neg. euclidean",
     x = "TR (post stimulus onset)", 
     y = "sim(incon, incon) - sim(incon, congr)"
-    ) +
+  ) +
   theme(legend.position = "none")
 
 vanil.me.group %>%
-
+  
   filter(glm == "1tr1knot", measure == "neg.eucl", param == "incon", norma == "prw") %>%
-
+  
   ggplot(aes(tr, m)) +
   geom_line(aes(group = parcel, color = network), size = 1) +
   facet_grid(vars(network), vars(session)) +
   geom_hline(yintercept = 0) +
-
+  
   scale_color_brewer(type = "qual", palette = 1) +
   # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
   # scale_y_continuous(limits = c(-0.5, 0.2)) +
-
+  
   labs(
     title = "simil measure: prewhitened neg. euclidean", 
     x = "TR (post stimulus onset)",
     y = "sim(incon, incon) - sim(incon, congr)"
-    ) +
+  ) +
   theme(legend.position = "none")
 
 
 vanil.me.group %>%
-
+  
   filter(glm == "1tr1knot", measure == "neg.neuc", param == "incon", norma == "raw") %>%
-
+  
   ggplot(aes(tr, m)) +
   geom_line(aes(group = parcel, color = network), size = 1) +
   facet_grid(vars(network), vars(session)) +
   geom_hline(yintercept = 0) +
-
+  
   scale_color_brewer(type = "qual", palette = 1) +
   # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
   # scale_y_continuous(limits = c(-0.5, 0.2)) +
-
+  
   labs(
     title = "simil measure: neg. normalized euclidean",
     x = "TR (post stimulus onset)", 
     y = "sim(incon, incon) - sim(incon, congr)"
-    ) +
+  ) +
   theme(legend.position = "none")
 
 vanil.me.group %>%
-
+  
   filter(glm == "1tr1knot", measure == "neg.neuc", param == "incon", norma == "prw") %>%
-
+  
   ggplot(aes(tr, m)) +
   geom_line(aes(group = parcel, color = network), size = 1) +
   facet_grid(vars(network), vars(session)) +
   geom_hline(yintercept = 0) +
-
+  
   scale_color_brewer(type = "qual", palette = 1) +
   # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
   # scale_y_continuous(limits = c(-0.5, 0.2)) +
-
+  
   labs(
     title = "simil measure: prewhitened neg. normalized euclidean", 
     x = "TR (post stimulus onset)",
     y = "sim(incon, incon) - sim(incon, congr)"
-    ) +
+  ) +
   theme(legend.position = "none")
 
 
@@ -960,126 +933,126 @@ vanil.me.group %>%
 ## congruency
 
 vanil.me.group %>%
-
+  
   filter(glm == "1tr1knot", measure == "corr", param == "congr", norma == "raw") %>%
-
+  
   ggplot(aes(tr, m)) +
   geom_line(aes(group = parcel, color = network), size = 1) +
   facet_grid(vars(network), vars(session)) +
   geom_hline(yintercept = 0) +
-
+  
   scale_color_brewer(type = "qual", palette = 1) +
   # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
   # scale_y_continuous(limits = c(-0.5, 0.2)) +
-
+  
   labs(
     title = "simil measure: correlation", 
     x = "TR (post stimulus onset)",
     y = "sim(congr, congr) - sim(incon, congr)"
-    ) +
+  ) +
   theme(legend.position = "none")
 
 
 vanil.me.group %>%
-
+  
   filter(glm == "1tr1knot", measure == "corr", param == "congr", norma == "prw") %>%
-
+  
   ggplot(aes(tr, m)) +
   geom_line(aes(group = parcel, color = network), size = 1) +
   facet_grid(vars(network), vars(session)) +
   geom_hline(yintercept = 0) +
-
+  
   scale_color_brewer(type = "qual", palette = 1) +
   # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
   # scale_y_continuous(limits = c(-0.5, 0.2)) +
-
+  
   labs(
     title = "simil measure: prewhitened correlation", 
     x = "TR (post stimulus onset)", 
     y = "sim(congr, congr) - sim(incon, congr)"
-    ) +
+  ) +
   theme(legend.position = "none")
 
 
 vanil.me.group %>%
-
+  
   filter(glm == "1tr1knot", measure == "neg.eucl", param == "congr", norma == "raw") %>%
-
+  
   ggplot(aes(tr, m)) +
   geom_line(aes(group = parcel, color = network), size = 1) +
   facet_grid(vars(network), vars(session)) +
   geom_hline(yintercept = 0) +
-
+  
   scale_color_brewer(type = "qual", palette = 1) +
   # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
   # scale_y_continuous(limits = c(-0.5, 0.2)) +
-
+  
   labs(
     title = "simil measure: neg. euclidean",
     x = "TR (post stimulus onset)", 
     y = "sim(congr, congr) - sim(incon, congr)"
-    ) +
+  ) +
   theme(legend.position = "none")
 
 vanil.me.group %>%
-
+  
   filter(glm == "1tr1knot", measure == "neg.eucl", param == "congr", norma == "prw") %>%
-
+  
   ggplot(aes(tr, m)) +
   geom_line(aes(group = parcel, color = network), size = 1) +
   facet_grid(vars(network), vars(session)) +
   geom_hline(yintercept = 0) +
-
+  
   scale_color_brewer(type = "qual", palette = 1) +
   # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
   # scale_y_continuous(limits = c(-0.5, 0.2)) +
-
+  
   labs(
     title = "simil measure: prewhitened neg. euclidean", 
     x = "TR (post stimulus onset)",
     y = "sim(congr, congr) - sim(incon, congr)"
-    ) +
+  ) +
   theme(legend.position = "none")
 
 
 vanil.me.group %>%
-
+  
   filter(glm == "1tr1knot", measure == "neg.neuc", param == "congr", norma == "raw") %>%
-
+  
   ggplot(aes(tr, m)) +
   geom_line(aes(group = parcel, color = network), size = 1) +
   facet_grid(vars(network), vars(session)) +
   geom_hline(yintercept = 0) +
-
+  
   scale_color_brewer(type = "qual", palette = 1) +
   # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
   # scale_y_continuous(limits = c(-0.5, 0.2)) +
-
+  
   labs(
     title = "simil measure: neg. normalized euclidean",
     x = "TR (post stimulus onset)", 
     y = "sim(congr, congr) - sim(incon, congr)"
-    ) +
+  ) +
   theme(legend.position = "none")
 
 vanil.me.group %>%
-
+  
   filter(glm == "1tr1knot", measure == "neg.neuc", param == "congr", norma == "prw") %>%
-
+  
   ggplot(aes(tr, m)) +
   geom_line(aes(group = parcel, color = network), size = 1) +
   facet_grid(vars(network), vars(session)) +
   geom_hline(yintercept = 0) +
-
+  
   scale_color_brewer(type = "qual", palette = 1) +
   # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
   # scale_y_continuous(limits = c(-0.5, 0.2)) +
-
+  
   labs(
     title = "simil measure: prewhitened neg. normalized euclidean", 
     x = "TR (post stimulus onset)",
     y = "sim(congr, congr) - sim(incon, congr)"
-    ) +
+  ) +
   theme(legend.position = "none")
 
 
@@ -1093,126 +1066,126 @@ vanil.me.group %>%
 ## congruency
 
 vanil.me.group %>%
-
+  
   filter(glm == "1tr1knot", measure == "corr", param == "intercept", norma == "raw") %>%
-
+  
   ggplot(aes(tr, m)) +
   geom_line(aes(group = parcel, color = network), size = 1) +
   facet_grid(vars(network), vars(session)) +
   geom_hline(yintercept = 0) +
-
+  
   scale_color_brewer(type = "qual", palette = 1) +
   # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
   # scale_y_continuous(limits = c(-0.5, 0.2)) +
-
+  
   labs(
     title = "simil measure: correlation", 
     x = "TR (post stimulus onset)",
     y = "sim(congr, congr) - sim(incon, congr)"
-    ) +
+  ) +
   theme(legend.position = "none")
 
 
 vanil.me.group %>%
-
+  
   filter(glm == "1tr1knot", measure == "corr", param == "intercept", norma == "prw") %>%
-
+  
   ggplot(aes(tr, m)) +
   geom_line(aes(group = parcel, color = network), size = 1) +
   facet_grid(vars(network), vars(session)) +
   geom_hline(yintercept = 0) +
-
+  
   scale_color_brewer(type = "qual", palette = 1) +
   # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
   # scale_y_continuous(limits = c(-0.5, 0.2)) +
-
+  
   labs(
     title = "simil measure: prewhitened correlation", 
     x = "TR (post stimulus onset)", 
     y = "sim(congr, congr) - sim(incon, congr)"
-    ) +
+  ) +
   theme(legend.position = "none")
 
 
 vanil.me.group %>%
-
+  
   filter(glm == "1tr1knot", measure == "neg.eucl", param == "intercept", norma == "raw") %>%
-
+  
   ggplot(aes(tr, m)) +
   geom_line(aes(group = parcel, color = network), size = 1) +
   facet_grid(vars(network), vars(session)) +
   geom_hline(yintercept = 0) +
-
+  
   scale_color_brewer(type = "qual", palette = 1) +
   # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
   # scale_y_continuous(limits = c(-0.5, 0.2)) +
-
+  
   labs(
     title = "simil measure: neg. euclidean",
     x = "TR (post stimulus onset)", 
     y = "sim(congr, congr) - sim(incon, congr)"
-    ) +
+  ) +
   theme(legend.position = "none")
 
 vanil.me.group %>%
-
+  
   filter(glm == "1tr1knot", measure == "neg.eucl", param == "intercept", norma == "prw") %>%
-
+  
   ggplot(aes(tr, m)) +
   geom_line(aes(group = parcel, color = network), size = 1) +
   facet_grid(vars(network), vars(session)) +
   geom_hline(yintercept = 0) +
-
+  
   scale_color_brewer(type = "qual", palette = 1) +
   # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
   # scale_y_continuous(limits = c(-0.5, 0.2)) +
-
+  
   labs(
     title = "simil measure: prewhitened neg. euclidean", 
     x = "TR (post stimulus onset)",
     y = "sim(congr, congr) - sim(incon, congr)"
-    ) +
+  ) +
   theme(legend.position = "none")
 
 
 vanil.me.group %>%
-
+  
   filter(glm == "1tr1knot", measure == "neg.neuc", param == "intercept", norma == "raw") %>%
-
+  
   ggplot(aes(tr, m)) +
   geom_line(aes(group = parcel, color = network), size = 1) +
   facet_grid(vars(network), vars(session)) +
   geom_hline(yintercept = 0) +
-
+  
   scale_color_brewer(type = "qual", palette = 1) +
   # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
   # scale_y_continuous(limits = c(-0.5, 0.2)) +
-
+  
   labs(
     title = "simil measure: neg. normalized euclidean",
     x = "TR (post stimulus onset)", 
     y = "sim(congr, congr) - sim(incon, congr)"
-    ) +
+  ) +
   theme(legend.position = "none")
 
 vanil.me.group %>%
-
+  
   filter(glm == "1tr1knot", measure == "neg.neuc", param == "intercept", norma == "prw") %>%
-
+  
   ggplot(aes(tr, m)) +
   geom_line(aes(group = parcel, color = network), size = 1) +
   facet_grid(vars(network), vars(session)) +
   geom_hline(yintercept = 0) +
-
+  
   scale_color_brewer(type = "qual", palette = 1) +
   # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
   # scale_y_continuous(limits = c(-0.5, 0.2)) +
-
+  
   labs(
     title = "simil measure: prewhitened neg. normalized euclidean", 
     x = "TR (post stimulus onset)",
     y = "sim(congr, congr) - sim(incon, congr)"
-    ) +
+  ) +
   theme(legend.position = "none")
 
 
@@ -1226,126 +1199,126 @@ vanil.me.group %>%
 ## congruency
 
 vanil.me.group %>%
-
+  
   filter(glm == "1tr1knot", measure == "corr", param == "intercept", norma == "raw") %>%
-
+  
   ggplot(aes(tr, m)) +
   geom_line(aes(group = parcel, color = network), size = 1) +
   facet_grid(vars(network), vars(session)) +
   geom_hline(yintercept = 0) +
-
+  
   scale_color_brewer(type = "qual", palette = 1) +
   # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
   # scale_y_continuous(limits = c(-0.5, 0.2)) +
-
+  
   labs(
     title = "simil measure: correlation", 
     x = "TR (post stimulus onset)",
     y = "sim(within-run) - sim(incon, congr)"
-    ) +
+  ) +
   theme(legend.position = "none")
 
 
 vanil.me.group %>%
-
+  
   filter(glm == "1tr1knot", measure == "corr", param == "intercept", norma == "prw") %>%
-
+  
   ggplot(aes(tr, m)) +
   geom_line(aes(group = parcel, color = network), size = 1) +
   facet_grid(vars(network), vars(session)) +
   geom_hline(yintercept = 0) +
-
+  
   scale_color_brewer(type = "qual", palette = 1) +
   # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
   # scale_y_continuous(limits = c(-0.5, 0.2)) +
-
+  
   labs(
     title = "simil measure: prewhitened correlation", 
     x = "TR (post stimulus onset)", 
     y = "sim(within-run) - sim(incon, congr)"
-    ) +
+  ) +
   theme(legend.position = "none")
 
 
 vanil.me.group %>%
-
+  
   filter(glm == "1tr1knot", measure == "neg.eucl", param == "intercept", norma == "raw") %>%
-
+  
   ggplot(aes(tr, m)) +
   geom_line(aes(group = parcel, color = network), size = 1) +
   facet_grid(vars(network), vars(session)) +
   geom_hline(yintercept = 0) +
-
+  
   scale_color_brewer(type = "qual", palette = 1) +
   # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
   # scale_y_continuous(limits = c(-0.5, 0.2)) +
-
+  
   labs(
     title = "simil measure: neg. euclidean",
     x = "TR (post stimulus onset)", 
     y = "sim(within-run) - sim(incon, congr)"
-    ) +
+  ) +
   theme(legend.position = "none")
 
 vanil.me.group %>%
-
+  
   filter(glm == "1tr1knot", measure == "neg.eucl", param == "intercept", norma == "prw") %>%
-
+  
   ggplot(aes(tr, m)) +
   geom_line(aes(group = parcel, color = network), size = 1) +
   facet_grid(vars(network), vars(session)) +
   geom_hline(yintercept = 0) +
-
+  
   scale_color_brewer(type = "qual", palette = 1) +
   # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
   # scale_y_continuous(limits = c(-0.5, 0.2)) +
-
+  
   labs(
     title = "simil measure: prewhitened neg. euclidean", 
     x = "TR (post stimulus onset)",
     y = "sim(within-run) - sim(incon, congr)"
-    ) +
+  ) +
   theme(legend.position = "none")
 
 
 vanil.me.group %>%
-
+  
   filter(glm == "1tr1knot", measure == "neg.neuc", param == "intercept", norma == "raw") %>%
-
+  
   ggplot(aes(tr, m)) +
   geom_line(aes(group = parcel, color = network), size = 1) +
   facet_grid(vars(network), vars(session)) +
   geom_hline(yintercept = 0) +
-
+  
   scale_color_brewer(type = "qual", palette = 1) +
   # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
   # scale_y_continuous(limits = c(-0.5, 0.2)) +
-
+  
   labs(
     title = "simil measure: neg. normalized euclidean",
     x = "TR (post stimulus onset)", 
     y = "sim(within-run) - sim(incon, congr)"
-    ) +
+  ) +
   theme(legend.position = "none")
 
 vanil.me.group %>%
-
+  
   filter(glm == "1tr1knot", measure == "neg.neuc", param == "intercept", norma == "prw") %>%
-
+  
   ggplot(aes(tr, m)) +
   geom_line(aes(group = parcel, color = network), size = 1) +
   facet_grid(vars(network), vars(session)) +
   geom_hline(yintercept = 0) +
-
+  
   scale_color_brewer(type = "qual", palette = 1) +
   # scale_x_continuous(limits = c(1, 12), breaks = seq(1, 12)) +
   # scale_y_continuous(limits = c(-0.5, 0.2)) +
-
+  
   labs(
     title = "simil measure: prewhitened neg. normalized euclidean", 
     x = "TR (post stimulus onset)",
     y = "sim(within-run) - sim(incon, congr)"
-    ) +
+  ) +
   theme(legend.position = "none")
 
 
@@ -1403,7 +1376,7 @@ r <- apply(
   atanh(vanil.1tr1knot[, , "raw", "knot8", 1, , "proactive", "corr"]),
   c(".row", ".col"),
   mean
-  ) %>%
+) %>%
   tanh
 r <- r[is.run1, is.run2]
 # r <- r[, is.run2]
@@ -1421,8 +1394,8 @@ vanil.inconub %>%
   # geom_beeswarm() +
   facet_grid(cols = vars(session))
 
-  # filter(param == "incon") %>%
-  group_by(norma, tr, parcel, session, measure, glm, network, param) %>%
+# filter(param == "incon") %>%
+group_by(norma, tr, parcel, session, measure, glm, network, param) %>%
   summarize(
     p = wilcox.test(value, alternative = "greater")$p.value,
     w = wilcox.test(value, alternative = "greater")$statistic,
