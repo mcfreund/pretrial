@@ -82,8 +82,8 @@ estimate_simil <- function(fit_1, fit_2) {
   
   ## estimate prewhitening matrices
   
-  W2_1 <- whitening(resid(fit_1), shrinkage = 0.4)$W2
-  W2_2 <- whitening(resid(fit_2), shrinkage = 0.4)$W2
+  W2_1 <- whitening(resid(fit_1))$W2
+  W2_2 <- whitening(resid(fit_2))$W2
 
   W2 <- (W2_1 + W2_2) / 2
   
@@ -95,11 +95,11 @@ estimate_simil <- function(fit_1, fit_2) {
   vanil_corr_raw <- cor(Bhat)  ## pearson
   vanil_corr_prw <- cor(Bhat_w)
   
-  vanil_eucl_raw <- dist2mat(Bhat) / n_vox  ## euclidean
-  vanil_eucl_prw <- dist2mat(Bhat_w) / n_vox
+  vanil_eucl_raw <- dist2mat(Bhat)^2 / n_vox  ## euclidean (squared)
+  vanil_eucl_prw <- dist2mat(Bhat_w)^2 / n_vox
   
-  vanil_neuc_raw <- dist2mat(scale(Bhat)) / n_vox  ## norm. euclidean
-  vanil_neuc_prw <- dist2mat(scale(Bhat_w)) / n_vox
+  vanil_neuc_raw <- dist2mat(scale(Bhat))^2 / n_vox  ## norm. euclidean (squared)
+  vanil_neuc_prw <- dist2mat(scale(Bhat_w))^2 / n_vox
   
   ## cross-validated RSA
   
@@ -111,17 +111,17 @@ estimate_simil <- function(fit_1, fit_2) {
   
   cmat <- contrast_matrix(n_cond)
   
-  cross_eucl_raw <- colSums(t(cmat %*% Bhat_1) * t(Bhat_2) %*% t(cmat))  ## euclidean
-  cross_eucl_raw <- matrix(cross_eucl_raw, ncol = n_cond)
+  cross_eucl_raw <- colSums(t(cmat %*% Bhat_1) * t(Bhat_2) %*% t(cmat)) / n_vox  ## euclidean (squared)
+  cross_eucl_raw <- matrix(cross_eucl_raw, ncol = n_cond) / n_vox
   
-  cross_eucl_prw <- colSums(t(cmat %*% Bhat_1 %*% W2) * t(Bhat_2) %*% t(cmat))  ## (mahalanobis)
-  cross_eucl_prw <- matrix(cross_eucl_prw, ncol = n_cond)
+  cross_eucl_prw <- colSums(t(cmat %*% Bhat_1 %*% W2) * t(Bhat_2) %*% t(cmat)) / n_vox  ## (mahalanobis) (squared)
+  cross_eucl_prw <- matrix(cross_eucl_prw, ncol = n_cond) / n_vox
   
-  cross_neuc_raw <- colSums(t(cmat %*% scale(Bhat_1)) * t(scale(Bhat_2)) %*% t(cmat))  ## norm. euclidean
-  cross_neuc_raw <- matrix(cross_neuc_raw, ncol = n_cond)
+  cross_neuc_raw <- colSums(t(cmat %*% scale(Bhat_1)) * t(scale(Bhat_2)) %*% t(cmat)) / n_vox  ## norm. euclidean (squared)
+  cross_neuc_raw <- matrix(cross_neuc_raw, ncol = n_cond) / n_vox
   
-  cross_neuc_prw <- colSums(t(cmat %*% scale(Bhat_1) %*% W2) * t(scale(Bhat_2)) %*% t(cmat))  ## (norm. mahalanobis)
-  cross_neuc_prw <- matrix(cross_neuc_prw, ncol = n_cond)
+  cross_neuc_prw <- colSums(t(cmat %*% scale(Bhat_1) %*% W2) * t(scale(Bhat_2)) %*% t(cmat)) / n_vox  ## (norm. mahalanobis) (squared)
+  cross_neuc_prw <- matrix(cross_neuc_prw, ncol = n_cond) / n_vox
   
   ## return
   
@@ -404,7 +404,7 @@ grid.arrange(
   
   ncol = 3,
   
-  top = "vanilla RSA"
+  top = textGrob("vanilla RSA", gp = gpar(fontsize = 16, fontface = 2))
   
 )
 
@@ -420,7 +420,7 @@ grid.arrange(
   
   ncol = 3,
   
-  top = "cross-validated RSA"
+  top = textGrob("cross-validated RSA", gp = gpar(fontsize = 16, fontface = 2))
   
 )
 
@@ -524,13 +524,13 @@ subjstats_grid_snr %>%
   facet_wrap(vars(method, measure), scales = "free_y") +
   scale_color_brewer(type = "qual", palette = 2) +
   scale_fill_brewer(type = "qual", palette = 2) +
-  labs(y = "RSA model fit (mean contrast)", x = "1 / SNR") +
+  labs(y = "RSA model fit (mean contrast)", x = "1 / SNR", title = "estimated mean differences") +
   theme(
     strip.background = element_blank(), 
+    strip.text = element_text(color = "grey20"),
     strip.placement = "outside", axis.ticks.x = element_blank(), 
     axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)
     )
-
 
 groupstats_grid_snr %>%
   
@@ -542,8 +542,8 @@ groupstats_grid_snr %>%
   
   facet_wrap(vars(method, measure)) +
   scale_color_brewer(type = "qual", palette = 2) +
-  labs(y = "sum of signed ranks", x = "1 / SNR") +
-  theme(strip.background = element_blank(), strip.placement = "outside")
+  labs(y = "sum of signed ranks", x = "1 / SNR", title = "test statistics") +
+  theme(strip.background = element_blank(), strip.placement = "outside", strip.text = element_text(color = "grey20"))
 
 ```
 
@@ -553,6 +553,36 @@ groupstats_grid_snr %>%
 * about
 * about
 * ...
+
+
+```{r}
+
+rownames(G) <- letters[1:nrow(G)]
+colnames(G) <- letters[1:ncol(G)]
+G_d <- reshape2::melt(G)
+# G_d$Var1 <- as.character(G_d$Var1)
+# G_d$Var2 <- as.character(G_d$Var2)
+# G_d$Var1[!G_d$Var1 %in% c("a", "b", "t")] <- ""
+# G_d$Var2[!G_d$Var2 %in% c("a", "b", "t")] <- ""
+
+G_d %>%
+  mutate(Var2 = factor(Var2, levels = rev(unique(Var2)))) %>%
+  ggplot(aes(Var1, Var2, fill = value)) +
+  geom_tile() +
+  # scale_fill_viridis() +
+  scale_fill_gradient(low = "black", high = "white") +
+  theme(
+    legend.position = "none",
+    panel.grid = element_blank(), panel.background = element_blank(),
+    axis.text.y = element_blank(),
+    axis.text.x = element_text(color = ifelse(!G_d$Var1 %in% c("a", "b", "t"), "transparent", "black")),
+    axis.ticks = element_blank(), axis.title = element_blank()
+    ) +
+  scale_x_discrete(position = "top")
+
+
+```
+
 
 
 ```{r sim_grid_trialcounts, cache = TRUE}
@@ -651,14 +681,15 @@ subjstats_grid_trialcounts %>%
     snr = factor(snr, levels = unique(snr))
     ) %>%
   
-  ggplot(aes(as.factor(n_events), value, color = cell_id, group = cell_id)) +
+  ggplot(aes(as.factor(n_events), value, color = cell_id, group = cell_id, alpha = cell_id)) +
   stat_summary(fun.data = "mean_cl_boot") +
   stat_summary(fun.y = mean, geom = "line", size = 1) +
   
   facet_wrap(vars(measure, snr), scales = "free_y") +
-  scale_color_brewer(type = "qual", palette = 6) +
-  labs(y = "similarity", x = "number of TRs in trial type 't'", title = "vanilla RSA") +
-  theme(strip.background = element_blank(), strip.placement = "outside")
+  scale_color_manual(values = c(mean_ba = "black", mean_t = "firebrick"), labels = c("[a, b]", "[t, !t]"), name = "[row, col]") +
+  scale_alpha_manual(values = c(mean_ba = 0.25, mean_t = 1), labels = c("[a, b]", "[t, !t]"), name = "[row, col]") +
+  labs(y = "mean similarity", x = "number of TRs in trial type 't'", title = "vanilla RSA") +
+  theme(strip.background = element_blank(), strip.placement = "outside", strip.text = element_text(color = "grey20"))
 
 
 subjstats_grid_trialcounts %>%
@@ -669,14 +700,17 @@ subjstats_grid_trialcounts %>%
     snr = factor(snr, levels = unique(snr))
     ) %>%
   
-  ggplot(aes(as.factor(n_events), value, color = cell_id, group = cell_id)) +
+  ggplot(aes(as.factor(n_events), value, color = cell_id, group = cell_id, alpha = cell_id)) +
   stat_summary(fun.data = "mean_cl_boot") +
   stat_summary(fun.y = mean, geom = "line", size = 1) +
   
   facet_wrap(vars(measure, snr), scales = "free_y") +
-  scale_color_brewer(type = "qual", palette = 6) +
-  labs(y = "similarity", x = "number of TRs in trial type 't'", title = "cross-validated RSA") +
-  theme(strip.background = element_blank(), strip.placement = "outside")
+  scale_color_manual(values = c(mean_ba = "black", mean_t = "firebrick"), labels = c("[a, b]", "[t, !t]"), name = "[row, col]") +
+  scale_alpha_manual(values = c(mean_ba = 0.25, mean_t = 1), labels = c("[a, b]", "[t, !t]"), name = "[row, col]") +
+  labs(
+    y = "mean similarity", x = "number of TRs in trial type 't'", title = "cross-validated RSA"
+    ) +
+  theme(strip.background = element_blank(), strip.placement = "outside", strip.text = element_text(color = "grey20"))
 
 
 
