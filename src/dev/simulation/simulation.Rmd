@@ -387,7 +387,7 @@ groupstats <- subjstats %>%
 ```
 
 
-## similarity matrices
+## matrices
 
 
 ```{r sim_balanced_mats, fig.width = 11, fig.height = 6}
@@ -504,6 +504,8 @@ groupstats_grid_snr <- subjstats_grid_snr %>%
 
 
 ```
+
+## matrices
 
 ## RSA model fits (mean contrasts)
 
@@ -669,9 +671,11 @@ subjstats_grid_trialcounts %<>%
 
 ```
 
-## RSA model fits (mean contrasts)
+## matrices
 
-```{r sim_grid_trialcounts_plot, fig.width = 11, fig.height = 8}
+## similarities (cell-wise means)
+
+```{r sim_grid_trialcounts_plot_vanil, fig.width = 11, fig.height = 8}
 
 subjstats_grid_trialcounts %>%
   
@@ -690,8 +694,31 @@ subjstats_grid_trialcounts %>%
   scale_alpha_manual(values = c(mean_ba = 0.25, mean_t = 1), labels = c("[a, b]", "[t, !t]"), name = "[row, col]") +
   labs(y = "mean similarity", x = "number of TRs in trial type 't'", title = "vanilla RSA") +
   theme(strip.background = element_blank(), strip.placement = "outside", strip.text = element_text(color = "grey20"))
+```
 
+**notes**
 
+* in high SNR scenarios (left panels), measurements are already close to their true values. I.e., correlation of trial types *a* and *b* are near 1; *t* and all other trial types (*!t*) are near 0.5.
+
+* thus, in high SNR, the number of trials in *t* has little impact on similarity measures.
+
+* because the 'true' correlation between *a* and *b* is 1, we can view the grey [*a*, *b*] line as the 'noise ceiling'.
+I.e., the highest correlation observable, given the SNR, and the number of trials in *a* and *b* (here, 10).
+
+* when decreasing SNR (moving right across panels), note that the y axis scale of the graphs decreases.
+I.e., with the correlation, the grey [*a*, *b*] line approaches zero. The noise ceiling is lowered.
+
+* In lower SNR scenarios, the magnitude (mean) of the measures become much more sensitive to the number of trials within each trial type.
+This is seen as the increasing red [*t*, *!t*] line across the graphs. (note however that the variances of these measures, indicated by the error bars, remains relatively stable across different trial counts.)
+
+* Eventually the observed [*t*, *!t*] similarity becomes greater than the [*a*, *b*] similarity, despite the true similarity being much less (e.g., r = 0.5 compared to r = 1). The key ingredients for this effect are:
+    * relatively **low SNR** (low upper-bound on similarities)
+    * a positive level of **"baseline" similarity**; i.e., trial types that are not predicted to be similar (because of theory) nevertheless evoke *somewhat* similar patterns (here, the baseline was r = 0.5)
+    * **differing numbers of trials** between conditions of interest.
+    
+* under equivalent SNR scenarios, euclidean's distance seems particularly sensitive to trial counts relative to correlation-like measures (correlation, standardized euclidean). not sure what to make of this, but interesting to note.
+
+```{r sim_grid_trialcounts_plot_cross, fig.width = 11, fig.height = 8}
 subjstats_grid_trialcounts %>%
   
   filter(method == "cross", normalization == "prw") %>%
@@ -715,6 +742,22 @@ subjstats_grid_trialcounts %>%
 
 
 ```
+
+
+**notes**
+
+* *note that the "cross-validated correlation" results here are not very interpretable: all cells with undefined correlations (as a result of variances $\leq 0$) were replaced with 0.* **focus instead on euclidean and standardized euclidean to interpret results**
+
+* the picture is different with cross-validated measures
+
+* first thing to note is that the SNR / number of trials does not impact the expected value of the similarity measure. For example, the 'noise ceiling' correlations ([*a*, *b*]) are roughly centered on zero (identical) in the euclidean distance and the standardized euclidean for all plots.
+
+* what number of trials *does* impact is the variances. this can be seen as increasing error bars from left to right across panels (with SNR decreasing), or as decreasing error bars of the red [*t*, *!t*] lines within each plot (with trial counts increasing).
+
+* also note that SNR impacts the *scale* of each plot. I.e., although identical patterns are centered at zero (grey line) across the board, patterns with r = 0.5 (red line) are located increasingly nearer to zero with decreasing SNR (red line approaches grey line from L to R panels). In other words, the only absolutely meaningful value in these measures is zero. the ratio of measures is defined by the SNR.
+    * this may be imprtant to note: different subjects, brain regions may have different levels of SNR. Thus, some form of rescaling may be warranted prior to group analysis or comparing across regions.
+    * what to use as the proper rescaling parameter? this question leads to complexities. 
+        * e.g., say we use the estimated variability within each subject's RDM (e.g., across-cell SD). this estimate would be inflated because poorer SNRs are not only associated with smaller ratio scale, but *larger* variance. thus, subjects with lower SNR would be unfairly downweighted.
 
 
 # conclusions
