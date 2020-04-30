@@ -1,0 +1,686 @@
+---
+title: 'sanity check: RSA pipeline results on simulated data'
+author: "michael freund"
+date: "4/28/2020"
+output:
+  html_document:
+    toc: true
+    highlight: zenburn
+---
+
+# intro
+
+```{r setup, include = FALSE}
+
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE)
+library(mikeutils)
+library(MASS)
+library(magrittr)
+library(dplyr)
+library(data.table)
+library(ggplot2)
+library(viridis)
+library(grid)
+library(gridExtra)
+library(foreach)
+library(doParallel)
+
+
+## settings ----
+
+theme_set(theme_light(base_size = 12))
+
+
+## functions ----
+
+generate_x <- function(n_tr, n_cond, n_tr_per_cond, n_tr_final_cond) {
+  ## assumes n_cond = 4
+  
+  if (n_tr < (n_cond - 1) * n_tr_per_cond + n_tr_final_cond) stop("not enough TRs")
+  
+  n_events <- (n_cond - 1) * n_tr_per_cond + n_tr_final_cond
+  
+  X <- matrix(0, nrow = n_events, ncol = n_cond)
+  for (cond_i in seq_len(n_cond - 1)) X[1:n_tr_per_cond + n_tr_per_cond * (cond_i - 1), cond_i] <- 1
+  X[(n_events - n_tr_final_cond + 1):n_events, n_cond] <- 1
+  
+  rbind(X, matrix(0, nrow = n_tr - nrow(X), ncol = n_cond))  ## add non-event trials
+
+
+}
+
+
+generate_y <- function(X, B, S, n_rt, n_vox) {
+  
+  E <- mvrnorm(n_tr, numeric(n_vox), S)
+  X %*% t(B) + E
+  
+}
+
+generate_noisecov <- function(n_vox, width) {
+  
+  ## gaussian kernel
+  
+  S <- diag(n_vox)
+  for (vox_i in 1:nrow(S)) {
+    for (vox_j in 1:ncol(S)) {
+      S[vox_i, vox_j] <- exp(-abs(vox_i - vox_j) / (2 * width^2))
+    }
+  }
+  
+  S
+  
+}
+
+estimate_simil <- function(fit_1, fit_2) {
+  
+  ## extract estimates
+  
+  Bhat_1 <- coef(fit_1)
+  Bhat_2 <- coef(fit_2)
+  Bhat <- t(rbind(coef(fit_1), coef(fit_2)))
+  
+  ## estimate prewhitening matrices
+  
+  W2_1 <- whitening(resid(fit_1), shrinkage = 0.4)$W2
+  W2_2 <- whitening(resid(fit_2), shrinkage = 0.4)$W2
+
+  W2 <- (W2_1 + W2_2) / 2
+  
+  ## vanilla RSA
+  
+  W <- expm::sqrtm(W2)  ## square root (mahalanobis whitening matrix)
+  Bhat_w <- W %*% Bhat
+  
+  vanil_corr_raw <- cor(Bhat)  ## pearson
+  vanil_corr_prw <- cor(Bhat_w)
+  
+  vanil_eucl_raw <- dist2mat(Bhat) / n_vox  ## euclidean
+  vanil_eucl_prw <- dist2mat(Bhat_w) / n_vox
+  
+  vanil_neuc_raw <- dist2mat(scale(Bhat)) / n_vox  ## norm. euclidean
+  vanil_neuc_prw <- dist2mat(scale(Bhat_w)) / n_vox
+  
+  ## cross-validated RSA
+  
+  Bhat_1c <- sweep(Bhat_1, 2, colMeans(Bhat_1))  ## center
+  Bhat_2c <- sweep(Bhat_2, 2, colMeans(Bhat_2))
+  
+  cross_corr_raw <- cov2cor(Bhat_1c %*% t(Bhat_2c))
+  cross_corr_prw <- cov2cor(Bhat_1c %*% W2 %*% t(Bhat_2c))
+  
+  cmat <- contrast_matrix(n_cond)
+  
+  cross_eucl_raw <- colSums(t(cmat %*% Bhat_1) * t(Bhat_2) %*% t(cmat))  ## euclidean
+  cross_eucl_raw <- matrix(cross_eucl_raw, ncol = n_cond)
+  
+  cross_eucl_prw <- colSums(t(cmat %*% Bhat_1 %*% W2) * t(Bhat_2) %*% t(cmat))  ## (mahalanobis)
+  cross_eucl_prw <- matrix(cross_eucl_prw, ncol = n_cond)
+  
+  cross_neuc_raw <- colSums(t(cmat %*% scale(Bhat_1)) * t(scale(Bhat_2)) %*% t(cmat))  ## norm. euclidean
+  cross_neuc_raw <- matrix(cross_neuc_raw, ncol = n_cond)
+  
+  cross_neuc_prw <- colSums(t(cmat %*% scale(Bhat_1) %*% W2) * t(scale(Bhat_2)) %*% t(cmat))  ## (norm. mahalanobis)
+  cross_neuc_prw <- matrix(cross_neuc_prw, ncol = n_cond)
+  
+  ## return
+  
+  list(
+    
+    vanil_corr_raw = vanil_corr_raw,
+    vanil_corr_prw = vanil_corr_prw,
+
+    vanil_eucl_raw = vanil_eucl_raw,
+    vanil_eucl_prw = vanil_eucl_prw,
+    
+    vanil_neuc_raw = vanil_neuc_raw,
+    vanil_neuc_prw = vanil_neuc_prw,
+    
+    cross_corr_raw = cross_corr_raw,
+    cross_corr_prw = cross_corr_prw,
+    
+    cross_eucl_raw = cross_eucl_raw,
+    cross_eucl_prw = cross_eucl_prw,
+    
+    cross_neuc_raw = cross_neuc_raw,
+    cross_neuc_prw = cross_neuc_prw
+    
+  )
+  
+}
+
+plot_matrix <- function(d) {
+  
+  d %>%
+    mutate(.col = factor(.col, levels = rev(unique(.col)))) %>%
+    ggplot(aes(.row, .col, fill = value)) +
+    geom_tile() +
+    # scale_fill_viridis() +
+    scale_fill_gradient(low = "black", high = "white") +
+    theme(
+      # legend.position = "none", 
+      panel.grid = element_blank(), panel.background = element_blank(),
+      axis.text = element_blank(), axis.ticks = element_blank(), axis.title = element_blank()
+      )
+
+}
+
+wrangle_groupmats <- function(rsa) {
+  
+  ## get full matrix for plotting
+  
+  rsa_full <- setNames(vector("list", length(rsatypes)), rsatypes)
+  
+  for (type_i in rsatypes) {
+    # type_i = "vanil_corr_raw"
+    
+    ## extract mats
+    
+    if (grepl("vanil", type_i)) {
+      l <- lapply(rsa, function(x) x[[type_i]][1:n_cond, (n_cond + 1):(2 * n_cond)])
+    } else {
+      l <- lapply(rsa, function(x) x[[type_i]])
+    }
+    
+    ## name columns
+    for (i in seq_along(l)) dimnames(l[[i]]) <- list(.row = letters[1:n_cond], .col = letters[1:n_cond])
+    
+    rsa_full[[type_i]] <- reshape2::melt(l)
+    
+  }
+  rsa_full <- bind_rows(rsa_full, .id = "type") %>% rename(subj = L1)
+  
+  ## negate euclidean (for interpretability):
+  rsa_full$value[grepl("euc", rsa_full$type)] <- -rsa_full$value[grepl("euc", rsa_full$type)]
+  
+  ## set NaNs to zero:
+  rsa_full$value[is.nan(rsa_full$value)] <- 0
+  
+  ## split "type" col:
+  rsa_full <- cbind(
+    rsa_full,
+    reshape2::colsplit(rsa_full$type, "_", c("method", "measure", "normalization"))
+  )
+  
+  ## average across subjects and return:
+  bind_rows(
+    
+    rsa_full %>%
+      filter(type %in% c("vanil_corr_raw", "vanil_corr_prw")) %>%
+      group_by(method, measure, normalization, type, .row, .col) %>%
+      summarize(value = tanh(mean(atanh(value)))),
+    
+    rsa_full %>%
+      filter(!type %in% c("vanil_corr_raw", "vanil_corr_prw")) %>%
+      group_by(method, measure, normalization, type, .row, .col) %>%
+      summarize(value = mean(value))
+    
+  )
+  
+}
+
+wrangle_subjvecs <- function(rsa) {
+  
+  rsa_half <- setNames(vector("list", length(rsatypes)), rsatypes)
+  for (type_i in rsatypes) {
+    # type_i = "cross_corr_raw"
+    
+    ## get mats
+    
+    if (grepl("vanil", type_i)) {
+      l <- lapply(rsa, function(x) x[[type_i]][1:n_cond, (n_cond + 1):(2 * n_cond)])
+    } else {
+      l <- lapply(rsa, function(x) x[[type_i]])
+    }
+    
+    ## average across triangles (only necessary for vanil measures and cv corr, but won't hurt to do for all)
+    l <- lapply(l, fold)
+    
+    ## name columns
+    for (i in seq_along(l)) dimnames(l[[i]]) <- list(.row = letters[1:n_cond], .col = letters[1:n_cond])
+    
+    ## set NaNs to 0
+    for (i in seq_along(l)) l[[i]][is.nan(l[[i]])] <- 0
+    
+    rsa_half[[type_i]] <- bind_rows(lapply(l, mat2vec), .id = "subj")  ## get lower triangles
+    
+  }
+  rsa_half <- bind_rows(rsa_half, .id = "type")
+  
+  ## negate euclidean (for interpretability):
+  rsa_half$value[grepl("euc", rsa_half$type)] <- -rsa_half$value[grepl("euc", rsa_half$type)]
+  
+  ## make cell col and split "type" col:
+  rsa_half$cell <- paste0(rsa_half$.row, rsa_half$.col)
+  rsa_half <- cbind(
+    rsa_half,
+    reshape2::colsplit(rsa_half$type, "_", c("method", "measure", "normalization"))
+  )
+  
+  rsa_half
+ 
+}
+
+
+
+fold <- function(m) {
+  
+  ## get average
+  mt <- t(m)
+  avg <- (m[lower.tri(m)] + mt[lower.tri(mt)]) / 2
+  
+  ## add back to matrix
+  m[lower.tri(m)] <- avg
+  m <- t(m)
+  m[lower.tri(m)] <- avg
+  
+  m
+  
+}
+
+
+## variables ----
+
+rsatypes <- c(
+  "vanil_corr_raw",
+  "vanil_corr_prw",
+  "vanil_eucl_raw",
+  "vanil_eucl_prw",
+  "vanil_neuc_raw",
+  "vanil_neuc_prw",
+  "cross_corr_raw",
+  "cross_corr_prw",
+  "cross_eucl_raw",
+  "cross_eucl_prw",
+  "cross_neuc_raw",
+  "cross_neuc_prw"
+)
+
+
+```
+
+
+## parameters
+
+```{r parameters}
+
+n_subj <- 30
+n_vox <- 100
+n_cond <- 20
+n_tr <- 1000
+n_tr_per_cond <- 10
+width <- 0.9
+snr <- 1
+
+S_0.9 <- generate_noisecov(n_vox, width)
+
+G <- diag(n_cond)
+G[1, 2] <- 1
+G[2, 1] <- 1
+G[G == 0] <- 0.5
+
+```
+
+
+
+# simulation 1: balanced design, high SNR
+
+* about
+* about
+* ...
+
+```{r sim_balanced}
+
+## simulate
+
+X <- generate_x(n_tr, n_cond, n_tr_per_cond, n_tr_per_cond)
+
+set.seed(0)
+rsa <- vector("list", n_subj)
+for (subj_i in seq_len(n_subj)) {
+
+  B <- mvrnorm(n_vox, numeric(n_cond), Sigma = G)  ## generate
+  Y_1 <- generate_y(X, B, S_0.9 * snr, n_rt, n_vox)
+  Y_2 <- generate_y(X, B, S_0.9 * snr, n_rt, n_vox)
+
+  fit_1 <- .lm.fit(X, Y_1)  ## estimate
+  fit_2 <- .lm.fit(X, Y_2)
+  rsa[[subj_i]] <- estimate_simil(fit_1, fit_2)
+
+}
+
+## wrangle
+
+groupmats <- wrangle_groupmats(rsa)  ## full matrices (for plotting)
+
+subjvecs <- wrangle_subjvecs(rsa)  ## half matrices (lower tris, for stats)
+
+## fit RSA models (mean contrast)
+
+subjstats <- bind_rows(
+
+  subjvecs %>%
+
+    filter(type %in% c("vanil_corr_raw", "vanil_corr_prw")) %>%
+    group_by(subj, method, measure, normalization, type) %>%
+    summarize(
+      value = tanh(mean(atanh(value[cell == "ba"])) - mean(atanh(value[!cell %in% "ba"])))
+    ),
+
+  subjvecs %>%
+
+    filter(!type %in% c("vanil_corr_raw", "vanil_corr_prw")) %>%
+    group_by(subj, method, measure, normalization, type) %>%
+    summarize(
+      value = mean(value[cell == "ba"]) - mean(value[!cell %in% "ba"])
+    )
+)
+
+groupstats <- subjstats %>%
+  
+  group_by(method, measure, normalization) %>%
+  summarize(
+    w = wilcox.test(value, alternative = "greater")$statistic,
+    p = wilcox.test(value, alternative = "greater")$p.value
+    )
+
+```
+
+
+## similarity matrices
+
+
+```{r sim_balanced_mats, fig.width = 11, fig.height = 6}
+
+grid.arrange(
+  
+  groupmats %>% filter(type == "vanil_corr_raw") %>%  plot_matrix + labs(title = "correlation raw"),
+  groupmats %>% filter(type == "vanil_eucl_raw") %>%  plot_matrix + labs(title = "euclidean raw"),
+  groupmats %>% filter(type == "vanil_neuc_raw") %>%  plot_matrix + labs(title = "scaled euclidean raw"),
+  
+  groupmats %>% filter(type == "vanil_corr_prw") %>%  plot_matrix + labs(title = "correlation white"),
+  groupmats %>% filter(type == "vanil_eucl_prw") %>%  plot_matrix + labs(title = "euclidean white"),
+  groupmats %>% filter(type == "vanil_neuc_prw") %>%  plot_matrix + labs(title = "scaled euclidean white"),
+  
+  ncol = 3,
+  
+  top = "vanilla RSA"
+  
+)
+
+grid.arrange(
+  
+  groupmats %>% filter(type == "cross_corr_raw") %>%  plot_matrix + labs(title = "correlation raw"),
+  groupmats %>% filter(type == "cross_eucl_raw") %>%  plot_matrix + labs(title = "euclidean raw"),
+  groupmats %>% filter(type == "cross_neuc_raw") %>%  plot_matrix + labs(title = "scaled euclidean raw"),
+  
+  groupmats %>% filter(type == "cross_corr_prw") %>%  plot_matrix + labs(title = "correlation white"),
+  groupmats %>% filter(type == "cross_eucl_prw") %>%  plot_matrix + labs(title = "euclidean white"),
+  groupmats %>% filter(type == "cross_neuc_prw") %>%  plot_matrix + labs(title = "scaled euclidean white"),
+  
+  ncol = 3,
+  
+  top = "cross-validated RSA"
+  
+)
+
+```
+
+
+# simulation 2: balanced design, range of SNRs
+
+* about...
+* ...
+
+
+```{r sim_grid_snr, cache = TRUE}
+
+## simulate
+
+snr <- c(1:9, seq(10, 100, 10), 200, 300, 400)
+
+n_cores <- detectCores()
+cl <- makeCluster(n_cores - 1)
+registerDoParallel(cl)
+
+res_subjstats_grid_snr <- foreach(snr_i = snr, .packages = c("MASS", "mikeutils", "dplyr"), .inorder = FALSE) %dopar% {
+  # snr_i = 1
+
+  set.seed(0)
+  rsa <- vector("list", n_subj)
+  for (subj_i in seq_len(n_subj)) {
+
+    B <- mvrnorm(n_vox, numeric(n_cond), Sigma = G)  ## generate
+    Y_1 <- generate_y(X, B, S_0.9 * snr_i, n_rt, n_vox)
+    Y_2 <- generate_y(X, B, S_0.9 * snr_i, n_rt, n_vox)
+
+    fit_1 <- .lm.fit(X, Y_1)  ## estimate
+    fit_2 <- .lm.fit(X, Y_2)
+    rsa[[subj_i]] <- estimate_simil(fit_1, fit_2)
+
+  }
+
+  subjvecs <- wrangle_subjvecs(rsa)  ## half matrices (lower tris, for stats)
+
+  subjstats <- bind_rows(
+
+    subjvecs %>%
+
+      filter(type %in% c("vanil_corr_raw", "vanil_corr_prw")) %>%
+      group_by(subj, method, measure, normalization, type) %>%
+      summarize(
+        value = tanh(mean(atanh(value[cell == "ba"])) - mean(atanh(value[!cell %in% "ba"])))
+      ),
+
+    subjvecs %>%
+
+      filter(!type %in% c("vanil_corr_raw", "vanil_corr_prw")) %>%
+      group_by(subj, method, measure, normalization, type) %>%
+      summarize(
+        value = mean(value[cell == "ba"]) - mean(value[!cell %in% "ba"])
+      )
+  )
+
+  subjstats$snr <- snr_i
+
+  subjstats
+
+}
+
+stopCluster(cl)
+
+## wrangle
+
+subjstats_grid_snr <- bind_rows(res_subjstats_grid_snr) %>% 
+  ungroup %>%
+  mutate(method = factor(method, levels = rev(unique(method))))  ## for plotting
+
+groupstats_grid_snr <- subjstats_grid_snr %>%
+  group_by(method, measure, normalization, snr) %>%
+  summarize(
+    w = wilcox.test(value, alternative = "greater")$statistic,
+    p = wilcox.test(value, alternative = "greater")$p.value
+    )
+
+
+```
+
+## RSA model fits (mean contrasts)
+
+```{r sim_grid_snr_plot, fig.width = 11, fig.height = 6}
+
+subjstats_grid_snr %>%
+  
+  mutate(
+    snrlab = factor(snr),
+    snrlab = reorder(snrlab, snr),
+    method = factor(method, level = unique(method))
+    ) %>%
+  
+  ggplot(aes(snrlab, value, group = normalization, color = normalization)) +
+  stat_summary(fun.data = "mean_cl_boot") +
+  stat_summary(fun.y = mean, geom = "line", size = 1) +
+  
+  facet_wrap(vars(method, measure), scales = "free_y") +
+  scale_color_brewer(type = "qual", palette = 2) +
+  scale_fill_brewer(type = "qual", palette = 2) +
+  labs(y = "RSA model fit (mean contrast)", x = "1 / SNR") +
+  theme(
+    strip.background = element_blank(), 
+    strip.placement = "outside", axis.ticks.x = element_blank(), 
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)
+    )
+
+
+groupstats_grid_snr %>%
+  
+  ungroup %>%
+  mutate(method = factor(method, level = rev(unique(method)))) %>%
+
+  ggplot(aes(snr, w)) +
+  geom_line(aes(color = normalization), size = 2) +
+  
+  facet_wrap(vars(method, measure)) +
+  scale_color_brewer(type = "qual", palette = 2) +
+  labs(y = "sum of signed ranks", x = "1 / SNR") +
+  theme(strip.background = element_blank(), strip.placement = "outside")
+
+```
+
+
+# simulation 3: unbalanced designs, range of SNR
+
+* about
+* about
+* ...
+
+
+```{r sim_grid_trialcounts, cache = TRUE}
+
+## simulate
+
+snr <- c(1, 50, 100)
+n_events <- seq(10, 100, 20)
+
+cl <- makeCluster(n_cores - 1)
+registerDoParallel(cl)
+
+res_subjstats_grid_trialcounts <- foreach(
+  n_events_i = n_events, 
+  .packages = c("MASS", "mikeutils", "dplyr"), 
+  .inorder = FALSE
+  ) %dopar% {
+  # n_events_i = 1
+  
+  set.seed(0)
+  
+  X <- generate_x(n_tr, n_cond, n_tr_per_cond, n_events_i)
+  
+  subjstats <- vector("list", length(snr))
+  for (snr_i in seq_along(snr)) {
+    # snr_i = 1
+    
+    rsa <- vector("list", n_subj)
+    for (subj_i in seq_len(n_subj)) {
+  
+      B <- mvrnorm(n_vox, numeric(n_cond), Sigma = G)  ## generate
+      Y_1 <- generate_y(X, B, S_0.9 * snr[snr_i], n_rt, n_vox)
+      Y_2 <- generate_y(X, B, S_0.9 * snr[snr_i], n_rt, n_vox)
+  
+      fit_1 <- .lm.fit(X, Y_1)  ## estimate
+      fit_2 <- .lm.fit(X, Y_2)
+      rsa[[subj_i]] <- estimate_simil(fit_1, fit_2)
+  
+    }
+  
+    subjvecs <- wrangle_subjvecs(rsa)  ## half matrices (lower tris, for stats)
+  
+    subjstats_i <- bind_rows(
+  
+      subjvecs %>%
+  
+        filter(type %in% c("vanil_corr_raw", "vanil_corr_prw")) %>%
+        group_by(subj, method, measure, normalization, type) %>%
+        summarize(
+          mean_ba = tanh(mean(atanh(value[cell == "ba"]))),
+          mean_t = tanh(mean(atanh(value[grep("t", cell)])))
+        ),
+  
+      subjvecs %>%
+  
+        filter(!type %in% c("vanil_corr_raw", "vanil_corr_prw")) %>%
+        group_by(subj, method, measure, normalization, type) %>%
+        summarize(
+          mean_ba = mean(value[cell == "ba"]),
+          mean_t = mean(value[grep("t", cell)])
+        )
+    )
+  
+    subjstats_i$snr <- snr[snr_i]
+    subjstats_i$n_events <- n_events_i
+    
+    subjstats[[snr_i]] <- subjstats_i
+    
+    }
+  
+  bind_rows(subjstats)
+  
+}
+
+stopCluster(cl)
+
+
+## wrangle
+
+subjstats_grid_trialcounts <- bind_rows(res_subjstats_grid_trialcounts)
+
+subjstats_grid_trialcounts %<>%
+  tidyr::pivot_longer(cols = c("mean_ba", "mean_t"), names_to = "cell_id", values_to = "value")
+
+```
+
+## RSA model fits (mean contrasts)
+
+```{r sim_grid_trialcounts_plot, fig.width = 11, fig.height = 8}
+
+subjstats_grid_trialcounts %>%
+  
+  filter(method == "vanil", normalization == "prw") %>%
+  mutate(
+    snr = paste0("1/SNR: ", snr),
+    snr = factor(snr, levels = unique(snr))
+    ) %>%
+  
+  ggplot(aes(as.factor(n_events), value, color = cell_id, group = cell_id)) +
+  stat_summary(fun.data = "mean_cl_boot") +
+  stat_summary(fun.y = mean, geom = "line", size = 1) +
+  
+  facet_wrap(vars(measure, snr), scales = "free_y") +
+  scale_color_brewer(type = "qual", palette = 6) +
+  labs(y = "similarity", x = "number of TRs in trial type 't'", title = "vanilla RSA") +
+  theme(strip.background = element_blank(), strip.placement = "outside")
+
+
+subjstats_grid_trialcounts %>%
+  
+  filter(method == "cross", normalization == "prw") %>%
+  mutate(
+    snr = paste0("1/SNR: ", snr),
+    snr = factor(snr, levels = unique(snr))
+    ) %>%
+  
+  ggplot(aes(as.factor(n_events), value, color = cell_id, group = cell_id)) +
+  stat_summary(fun.data = "mean_cl_boot") +
+  stat_summary(fun.y = mean, geom = "line", size = 1) +
+  
+  facet_wrap(vars(measure, snr), scales = "free_y") +
+  scale_color_brewer(type = "qual", palette = 6) +
+  labs(y = "similarity", x = "number of TRs in trial type 't'", title = "cross-validated RSA") +
+  theme(strip.background = element_blank(), strip.placement = "outside")
+
+
+
+```
+
+
+# conclusions

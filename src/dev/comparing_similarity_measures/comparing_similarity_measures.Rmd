@@ -197,3 +197,433 @@ For example:
 * no dependency would show as no interaction
 
 
+
+```{r setup, include = FALSE}
+
+knitr::opts_chunk$set(
+  cache = TRUE, echo = FALSE, warning = FALSE, message = FALSE,
+  fig.align = 'center',
+  fig.width = 11.5, fig.fullwidth = TRUE
+  )
+
+set.seed(0)
+
+library(here)
+library(magrittr)
+library(dplyr)
+library(data.table)
+library(mikeutils)
+library(lme4)
+library(ggplot2)
+library(ggbeeswarm)
+library(grid)
+library(gridExtra)
+library(cowplot)
+library(cifti)
+library(gifti)
+library(abind)
+
+
+## functions ----
+
+fold <- function(m) {
+  
+  ## get average
+  mt <- t(m)
+  avg <- (m[lower.tri(m)] + mt[lower.tri(mt)]) / 2
+  
+  ## add back to matrix
+  m[lower.tri(m)] <- avg
+  m <- t(m)
+  m[lower.tri(m)] <- avg
+  
+  m
+  
+}
+
+
+## settings ----
+
+theme_set(theme_classic(base_size = 10))
+
+
+## data ----
+
+## behavior and events
+
+pretrial <- fread(here("data", "pretrial_behavior.csv"))
+pretrial.subjsum <- fread(here("data", "pretrial_subjsumm.csv"))
+
+## parcel-wise means
+
+means <- abind(
+  readRDS(here("out", "univa", "means_shaefer400_baseline_Congruency_EVENTS_tentzero01210_censored.rds")),
+  readRDS(here("out", "univa", "means_shaefer400_proactive_Congruency_EVENTS_tentzero01210_censored.rds")),
+  rev.along = 0
+)
+names(dimnames(means)) <- c("param", "run", "knot", "parcel", "subj", "session")
+dimnames(means)$session <- c("baseline", "proactive")
+
+## parcel-wise similarity matrices
+
+## vanilla RSA
+
+vanil <- abind(
+  abind(
+    readRDS(here("out", "rsa", "rmatrix_vanilla_corr_shaefer400_baseline_Congruency_EVENTS_tentzero01210_censored.rds")),
+    readRDS(here("out", "rsa", "rmatrix_vanilla_corr_shaefer400_proactive_Congruency_EVENTS_tentzero01210_censored.rds")),
+    rev.along = 0
+  ),
+  -abind(
+    readRDS(here("out", "rsa", "rmatrix_vanilla_eucl_shaefer400_baseline_Congruency_EVENTS_tentzero01210_censored.rds")),
+    readRDS(here("out", "rsa", "rmatrix_vanilla_eucl_shaefer400_proactive_Congruency_EVENTS_tentzero01210_censored.rds")),
+    rev.along = 0
+  ),
+  -abind(
+    readRDS(here("out", "rsa", "rmatrix_vanilla_neuc_shaefer400_baseline_Congruency_EVENTS_tentzero01210_censored.rds")),
+    readRDS(here("out", "rsa", "rmatrix_vanilla_neuc_shaefer400_proactive_Congruency_EVENTS_tentzero01210_censored.rds")),
+    rev.along = 0
+  ),
+  rev.along = 0
+)
+
+names(dimnames(vanil)) <- c(".row", ".col", "norma", "knot", "parcel", "subj", "session", "measure")
+dimnames(vanil)$session <- c("baseline", "proactive")
+dimnames(vanil)$measure <- c("corr", "neg.eucl", "neg.neuc")
+
+
+cross <- abind(
+  abind(
+    readRDS(here("out", "rsa", "rmatrix_crossva_corr_shaefer400_baseline_Congruency_EVENTS_tentzero01210_censored.rds")),
+    readRDS(here("out", "rsa", "rmatrix_crossva_corr_shaefer400_proactive_Congruency_EVENTS_tentzero01210_censored.rds")),
+    rev.along = 0
+  ),
+  -abind(
+    readRDS(here("out", "rsa", "rmatrix_crossva_eucl_shaefer400_baseline_Congruency_EVENTS_tentzero01210_censored.rds")),
+    readRDS(here("out", "rsa", "rmatrix_crossva_eucl_shaefer400_proactive_Congruency_EVENTS_tentzero01210_censored.rds")),
+    rev.along = 0
+  ),
+  -abind(
+    readRDS(here("out", "rsa", "rmatrix_crossva_neuc_shaefer400_baseline_Congruency_EVENTS_tentzero01210_censored.rds")),
+    readRDS(here("out", "rsa", "rmatrix_crossva_neuc_shaefer400_proactive_Congruency_EVENTS_tentzero01210_censored.rds")),
+    rev.along = 0
+  ),
+  rev.along = 0
+)
+
+names(dimnames(cross)) <- c(".row", ".col", "norma", "knot", "parcel", "subj", "session", "measure")
+dimnames(cross)$session <- c("baseline", "proactive")
+dimnames(cross)$measure <- c("corr", "neg.eucl", "neg.neuc")
+
+
+## variables ----
+
+networks <- c("Vis", "DorsAttn", "SalVentAttn", "Cont", "Default", "SomMot", "Limbic")
+
+## get subj lists
+
+subjs.analysis <- unique(pretrial.subjsum[subj.set == "analysis"]$subj)
+subjs.development <- unique(pretrial.subjsum[subj.set == "development"]$subj)
+subjs.bad <- unique(pretrial.subjsum[subj.set == "bad"]$subj)
+
+## filter by those with data
+
+has.stats <- apply(means, "subj", function(.) !any(is.na(c(.))))
+subjs.with.stats <- names(has.stats)[has.stats]
+
+## TODO
+## these subjects do not have stats
+# setdiff(c(subjs.analysis, subjs.development), subjs.with.stats)
+## could be due to
+##  - no 3d+t gifti -> have RAs run
+##  - no beta gifti -> diagnose problem and fit
+
+subjs.analysis <- intersect(subjs.analysis, subjs.with.stats)
+subjs.development <- intersect(subjs.development, subjs.with.stats)
+subjs.bad <- intersect(subjs.bad, subjs.with.stats)
+
+
+## models ----
+
+dnames <- dimnames(vanil)$.row
+m <- diag(length(dnames))
+dimnames(m) <- dimnames(vanil)[c(".row", ".col")]
+m[] <- 0
+lt <- lower.tri(m)
+
+is.incon <- grepl("InCon", dnames)
+is.congr <- grepl("PC50Con|biasCon", dnames)
+is.pc50  <- grepl("PC50", dnames)
+is.bias  <- grepl("bias", dnames)
+is.run1  <- grepl("run1", dnames)
+is.run2  <- grepl("run2", dnames)
+
+m.incon <- m
+m.congr <- m
+m.pc50 <- m
+m.bias <- m
+m.bias.any <- m
+m.run <- m
+m.ond <- m
+m.offd <- m
+
+m.incon[is.incon, is.incon] <- 1
+m.congr[is.congr, is.congr] <- 1
+m.pc50[is.pc50, is.pc50] <- 1
+m.bias.any[is.bias, ] <- 1
+m.bias.any[, is.bias] <- 1
+m.bias[is.bias, is.bias] <- 1
+m.run[is.run1, is.run1] <- 1
+m.run[is.run2, is.run2] <- 1
+diag(m.ond[is.run1, is.run2]) <- 1
+diag(m.ond[is.run2, is.run1]) <- 1
+m.offd <- 1 - m.ond
+diag(m.offd) <- 0
+
+mlist <- list(m.incon, m.congr, m.pc50, m.bias, m.bias.any, m.run, m.ond, m.offd)
+names(mlist) <- c("incon", "congr", "pc50", "bias", "bias.any", "run", "ond", "offd")
+
+rm(m.incon, m.congr, m.pc50, m.bias, m.bias.any, m.run, m.ond, m.offd)
+
+
+## atlases ----
+
+# list.files("/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/ATLASES")
+
+parcellation <- read_atlas("schaefer400")
+
+nodename <- Sys.info()["nodename"]
+if (nodename == "ccplinux1") {
+  dir.atlas <- "/data/nil-external/ccp/freund/atlases"
+  dir.schaefer <- "/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/ATLASES/"
+} else if (nodename == "CCP-FREUND") {
+  dir.atlas <- "C:/local/atlases"
+  dir.schaefer <- dir.atlas
+}
+
+
+hcp <- list(
+  L  = readGIfTI(
+    file.path(dir.atlas, "surf", "HCP_S1200_GroupAvg_v1", "S1200.L.midthickness_MSMAll.32k_fs_LR.surf.gii")
+    ),
+  R = readGIfTI(
+    file.path(dir.atlas, "surf", "HCP_S1200_GroupAvg_v1", "S1200.R.midthickness_MSMAll.32k_fs_LR.surf.gii")
+    )
+)
+
+over <- list(
+  L = parcellation$atlas[1:(nrow(parcellation$atlas) / 2)], 
+  R = parcellation$atlas[(nrow(parcellation$atlas) / 2):nrow(parcellation$atlas)]
+  )
+
+# schaefer <- list(
+#   L = read_gifti2matrix(
+#     "/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/ATLASES/Schaefer2018_400Parcels_7Networks_order_L.label.gii"
+#     ) %>% c,
+#   R = read_gifti2matrix(
+#     "/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/ATLASES/Schaefer2018_400Parcels_7Networks_order_R.label.gii"
+#     ) %>% c
+# )
+
+## subset data ----
+
+means <- means[, ,  , , subjs.analysis, ]
+vanil <- vanil[, , , , , subjs.analysis, , ]
+cross <- cross[, , , , , subjs.analysis, , ]
+
+
+## wrangle to data.frames ----
+
+
+means.d <- reshape2::melt(means, value.name = "m")
+means.d$tr <- as.numeric(gsub("knot", "", means.d$knot))
+
+means.d$network <- ""  ## add networks
+for (network.i in networks) means.d$network[grepl(network.i, means.d$parcel)] <- network.i
+
+# means.d$seconds <- means.d$tr * 1.2
+
+means.d$trial.type <- gsub("PC50|bias", "", means.d$param)
+means.d$pc <- gsub("InCon|Con", "", means.d$param)
+
+means.d$run <- factor(means.d$run, levels = c("run1", "run2"))
+means.d$trial.type <- factor(means.d$trial.type, levels = c("Con", "InCon"))
+means.d$pc <- factor(means.d$pc, levels = c("PC50", "bias"))
+means.d$session <- factor(means.d$session, levels = c("baseline", "proactive"))
+
+## covariance to correlation:
+
+cross[, , , , , , , "corr"] <- apply(
+  cross[, , , , , , , "corr"],
+  c("norma", "knot", "parcel", "subj", "session"),
+  cov2cor
+)
+## average upper and lower triangles:
+cross[, , , , , , , "corr"] <- apply(
+  cross[, , , , , , , "corr"],
+  c("norma", "knot", "parcel", "subj", "session"),
+  fold
+)
+mat2vec
+dimnames(cross)
+m <- cross[, , 1, 1, 1, 1, 1, "corr"]
+m[ut] <- NA
+m[]
+
+## discard diagonal and upper triangle
+
+ut <- upper.tri(diag(4), diag = TRUE)
+inds <- which(ut, arr.ind = TRUE)
+for (cell in seq_len(nrow(inds))) {
+  # cell = 1
+  cross[inds[cell, "row"], inds[cell, "col"], , , , , , ] <- NA
+}
+
+cross.d <- reshape2::melt(cross, na.rm = TRUE)  ## to data.frame
+
+cross.d %<>%
+  filter(knot %in% c("knot2", "knot3", "knot4")) %>%
+  group_by(.row, .col, norma, parcel, subj, session, measure) %>%
+  summarize(value = mean(value))
+
+```
+
+
+# Distributions of statistics
+
+```{r}
+
+cross.d %>%
+  ungroup %>%
+  ggplot() +
+  geom_boxplot(aes(y = value, fill = norma)) +
+  facet_grid(vars(session), vars(measure), scales = "free")
+
+```
+
+
+# Impact of prewhitening
+
+## Maps
+
+### Unthresholded
+
+### Thresholded
+
+## Test statistics
+
+```{r}
+
+
+group <- cross.d %>%
+  ungroup %>%
+  filter(measure %in% c("neg.neuc", "neg.eucl")) %>%
+  group_by(norma, session, measure, .row, .col, parcel) %>%
+  summarize(
+    p = wilcox.test(value, alternative = "less")$p.value,
+    w = wilcox.test(value, alternative = "less")$statistic,
+    m = mean(value)
+  ) %>%
+  group_by(norma, session, measure, .row, .col) %>%
+  mutate(p.fdr = p.adjust(p, method = "fdr"))
+ 
+unique(group$.row)
+unique(group$.col)
+
+
+rois.pro <- group %>% 
+  filter(p.fdr < 0.05, .row == "PC50Con", .col == "PC50InCon", session == "proactive") %>%
+  arrange(p.fdr) %>%
+  pull(parcel) %>%
+  unique
+
+
+rois.bas <- group %>% 
+  filter(p.fdr < 0.05, .row == "PC50Con", .col == "PC50InCon", session == "baseline") %>%
+  arrange(p.fdr) %>%
+  pull(parcel) %>%
+  unique
+  
+  
+
+names(dimnames(cross))
+
+cross.means <- apply(
+  cross[, , , 2:4, , , , ],
+  c(".row", ".col", "norma", "parcel", "session", "measure"),
+  mean
+)
+dimnames(cross.means)
+
+cross.means.d <- reshape2::melt(cross.means)
+
+cross.means.d$network <- ""  ## add networks
+for (network.i in networks) cross.means.d$network[grepl(network.i, cross.means.d$parcel)] <- network.i
+
+
+cross.means.d %>%
+  filter(parcel %in% rois.pro, measure == "neg.eucl", norma == "raw") %>%
+  mutate(.col = factor(.col, levels = rev(unique(.col)))) %>%
+  ggplot(aes(.row, .col, fill = value)) +
+  geom_raster() +
+  facet_grid(vars(session), vars(parcel), scales = "free")
+
+grid.arrange(
+
+  cross.means.d %>%
+  filter(
+    parcel %in% rois.bas[1:5],
+    # parcel %in% c("LH_Vis_1", "LH_Vis_2", "LH_Vis_3", "LH_Vis_4", "LH_Vis_5"), 
+    measure == "neg.neuc", session == "baseline", norma == "raw"
+    ) %>%
+  mutate(.col = factor(.col, levels = rev(unique(.col)))) %>%
+  ggplot(aes(.row, .col, fill = value)) +
+  geom_raster() +
+  facet_grid(cols = vars(parcel), scales = "free") +
+  labs(title = "raw, euclidean"),
+
+cross.means.d %>%
+  filter(
+    parcel %in% rois.bas[1:5],
+    # parcel %in% c("LH_Vis_1", "LH_Vis_2", "LH_Vis_3", "LH_Vis_4", "LH_Vis_5"), 
+    measure == "neg.neuc", session == "baseline", norma == "prw"
+    ) %>%
+  mutate(.col = factor(.col, levels = rev(unique(.col)))) %>%
+  ggplot(aes(.row, .col, fill = value)) +
+  geom_raster() +
+  facet_grid(cols = vars(parcel), scales = "free") +
+  labs(title = "prw, euclidean")
+  
+)
+
+
+
+
+group %>% filter(session == "baseline", norma == "raw", p.fdr < 0.05) %>% View("bas_raw")
+group %>% filter(session == "proactive", norma == "raw", p.fdr < 0.05) %>% View("pro_raw")
+
+group %>% filter(session == "baseline", norma == "prw", p.fdr < 0.05) %>% View("prw")
+group %>% filter(session == "proactive", norma == "prw", p.fdr < 0.05) %>% View("prw")
+
+```
+
+
+
+
+
+## Megaparcel-level summaries
+
+```{r}
+
+```
+
+
+## Parcel-level summaries
+
+```{r}
+
+```
+
+
+# Impact of cross-validation
+

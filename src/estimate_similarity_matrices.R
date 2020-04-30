@@ -331,6 +331,9 @@ for (sess.i in seq_along(sessi)) {
             r.cv.subj.i.roi.i[, , "corr", "raw", knot.i] <- B.run1.c %*% t(B.run2.c)
             r.cv.subj.i.roi.i[, , "corr", "prw", knot.i] <- B.run1.c %*% W2 %*% t(B.run2.c)
             
+            ## TODO: NEED TO SCALE BY NUMBER OF DIMENSIONS!
+            
+            
             cveucl.v <- colSums(t(cmat %*% B.run1) * t(B.run2) %*% t(cmat))  ## euclidean
             cvmaha.v <- colSums(t(cmat %*% B.run1 %*% W2) * t(B.run2) %*% t(cmat))  ## mahalanobis
             r.cv.subj.i.roi.i[, , "eucl", "raw", knot.i] <- matrix(cveucl.v, ncol = length(regressors))
