@@ -1,0 +1,205 @@
+\documentclass{article}\usepackage[]{graphicx}\usepackage[]{color}
+% maxwidth is the original width if it is less than linewidth
+% otherwise use linewidth (to make sure the graphics do not exceed the margin)
+\makeatletter
+\def\maxwidth{ %
+  \ifdim\Gin@nat@width>\linewidth
+    \linewidth
+  \else
+    \Gin@nat@width
+  \fi
+}
+\makeatother
+
+\definecolor{fgcolor}{rgb}{0.345, 0.345, 0.345}
+\newcommand{\hlnum}[1]{\textcolor[rgb]{0.686,0.059,0.569}{#1}}%
+\newcommand{\hlstr}[1]{\textcolor[rgb]{0.192,0.494,0.8}{#1}}%
+\newcommand{\hlcom}[1]{\textcolor[rgb]{0.678,0.584,0.686}{\textit{#1}}}%
+\newcommand{\hlopt}[1]{\textcolor[rgb]{0,0,0}{#1}}%
+\newcommand{\hlstd}[1]{\textcolor[rgb]{0.345,0.345,0.345}{#1}}%
+\newcommand{\hlkwa}[1]{\textcolor[rgb]{0.161,0.373,0.58}{\textbf{#1}}}%
+\newcommand{\hlkwb}[1]{\textcolor[rgb]{0.69,0.353,0.396}{#1}}%
+\newcommand{\hlkwc}[1]{\textcolor[rgb]{0.333,0.667,0.333}{#1}}%
+\newcommand{\hlkwd}[1]{\textcolor[rgb]{0.737,0.353,0.396}{\textbf{#1}}}%
+\let\hlipl\hlkwb
+
+\usepackage{framed}
+\makeatletter
+\newenvironment{kframe}{%
+ \def\at@end@of@kframe{}%
+ \ifinner\ifhmode%
+  \def\at@end@of@kframe{\end{minipage}}%
+  \begin{minipage}{\columnwidth}%
+ \fi\fi%
+ \def\FrameCommand##1{\hskip\@totalleftmargin \hskip-\fboxsep
+ \colorbox{shadecolor}{##1}\hskip-\fboxsep
+     % There is no \\@totalrightmargin, so:
+     \hskip-\linewidth \hskip-\@totalleftmargin \hskip\columnwidth}%
+ \MakeFramed {\advance\hsize-\width
+   \@totalleftmargin\z@ \linewidth\hsize
+   \@setminipage}}%
+ {\par\unskip\endMakeFramed%
+ \at@end@of@kframe}
+\makeatother
+
+\definecolor{shadecolor}{rgb}{.97, .97, .97}
+\definecolor{messagecolor}{rgb}{0, 0, 0}
+\definecolor{warningcolor}{rgb}{1, 0, 1}
+\definecolor{errorcolor}{rgb}{1, 0, 0}
+\newenvironment{knitrout}{}{} % an empty environment to be redefined in TeX
+
+\usepackage{alltt}
+
+% \renewcommand{\familydefault}{\sfdefault}  %% sans-serif
+\usepackage{amsmath,amssymb}
+\usepackage[margin =0.51in]{geometry}
+\usepackage{enumitem}
+\usepackage{parskip}
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+\begin{document}
+
+\title{projection analysis}
+\author{mike freund}
+\date{\today}
+\maketitle
+
+
+\section*{intro}
+
+
+\section*{notation}
+
+\begin{itemize}
+  \item vertex $v \text{ in } 1, \dots, V$
+  \item TR $t \text{ in } 1, \dots, T$
+  \item $\mathbf{b}$: \textit{training set} beta pattern vector of length $V$, condition indicated by subscript
+  \item $\cdot'$: from \textit{test} set
+  \item $\mathbf{e}_t$: residual vector (of length $V$) at TR = t
+  \item $\mathbf{W}$: regularized inverse covariance matrix of residuals ($V \times V$)
+\end{itemize}
+
+
+\section*{within-run version}
+
+First validate the method by examining the distribution about the discriminant \textit{within each run}.
+This is perhaps the most `liberal' test as it does not require the discriminant to be aligned across scanning runs.
+
+Calculate the mean pattern \textbf{m}:
+
+\[
+\mathbf{m} = ({\mathbf{b}_\mathit{(incon.)} + \mathbf{b}_\mathit{(congr.)}})/2
+\]
+
+Select a condition to represent the positive end of the discriminant.
+Center the corresponding beta vector at the mean pattern and scale by the square of the length.
+This gives the discriminant, \textbf{d}.
+
+\[
+\mathbf{d} = 
+\frac
+{\mathbf{b}_\mathit{(incon.)} - \mathbf{m}}
+{||\mathbf{b}_\mathit{(incon.)} - \mathbf{m}||_2^2}
+\]
+
+Prewhiten and project a residual onto the discriminant.
+
+\[\hat{e}_t = \mathbf{d} \mathbf{W} (\mathbf{e}_t - \mathbf{m})\]
+
+
+unit: ratio of distance to hyperplane between test point and class centroid.
+
+\textbf{how to validate (positive / negative control analyses)}
+\begin{itemize}
+  \item At post-trial TRs in ROIs, do residuals move along discriminant as function of previous trial type?
+  \item Does this effect dissapear in non-ROIs?
+  \item Detrend BOLD timeseries with baseline model of regression.
+  Project detrended timeseries from ROIs and non-ROIs onto discriminant.
+  Regress projection onto events design matrix.
+  Does this recover trial type info?
+  I.e., $\beta_\mathit{(incon.)} > 0$ and $\beta_\mathit{(congr.)} < 0$?
+  (This projected timeseries could be used as a trial-by-trial measure, depending on its fidelity.)
+  Can also assess correlation of recovered $\beta$ with \textbf{b}.
+\end{itemize}
+
+\section*{cross-validated version}
+
+Next establish robustness to scanning run by cross-validating the discriminant \textit{across runs}.
+
+\[\hat{e}_t' = \mathbf{d} \mathbf{W} (\mathbf{e}_t' - \mathbf{m}')\]
+
+\textbf{validation}: repeat same validation analyses as above. Additionally:
+\begin{itemize}
+  \item calculate cosine angle between discriminants across runs. Hopefully positive.
+  \item 
+\end{itemize}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+% \section*{intro}
+% 
+% \subsection*{basic notation}
+% 
+% \begin{itemize}
+%   \item vertex $v \text{ in } 1, \dots, V$
+%   \item $\mathbf{a}$: pattern vector for condition a, of length $V$, within \textit{training set}
+%   \item $\mathbf{b}$: ... for condition b
+%   \item $\mathbf{x}'$: some observation (vector) within \textit{test} set
+% \end{itemize}
+% 
+% 
+% \section*{calculation}
+% 
+% \mathbf{1.} Select a condition: $\mathbf{a}$. This condition will define the `positive' end of the discriminant.
+% 
+% \textbf{2.} Subtract the \textit{mean pattern}, $\mathbf{m}$, from $\mathbf{a}$, and scale the resulting vector by this the square of its length.
+% Call this $\textbf{d}$, for discriminant.
+% 
+% \[\mathbf{m} = (\mathbf{a} + \mathbf{b}) / 2\]
+% 
+% \[
+% \mathbf{d} = 
+% \frac
+% {\mathbf{a} - \mathbf{m}}
+% {||\mathbf{a} - \mathbf{m}||_2^2}
+% \]
+% 
+% (Equivalently, scale the difference vector $\textbf{a} - \textbf{b}$ by two, then perform this scaling.)
+% 
+% Scaling by twice the length means that test points with projections (onto the discriminant) equal to 1, were equidistant from the 'hyperplane' as \textbf{a}.
+% 
+% \mathbf{3.} Similarly, remove mean pattern from test observation.
+% 
+% \[\mathbf{x}'_{-m} = \mathbf{x}' - \mathbf{m}\]
+% 
+% 
+% \textbf{4.} Project test observation onto discriminant.
+% 
+% \[p_{x'} = \mathbf{x}'_{-m} \mathbf{d}\]
+
+
+
+
+
+
+
+
+\end{document}
