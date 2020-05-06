@@ -1,0 +1,398 @@
+---
+title: 'Comparing betas between runwise and subj-wise (DMCC2 batch) GLMs'
+author: "michael freund"
+date: "15 April 2020"
+output:
+  html_document:
+  toc: true
+highlight: zenburn
+---
+  
+```{r setup, include = FALSE}
+
+knitr::opts_chunk$set(
+  cache = TRUE, echo = FALSE, warning = FALSE, message = FALSE,
+  fig.align = 'center',
+  fig.width = 11.5, fig.fullwidth = TRUE
+)
+
+set.seed(0)
+
+library(here)
+library(magrittr)
+library(dplyr)
+library(data.table)
+library(mikeutils)
+library(lme4)
+library(ggplot2)
+library(ggbeeswarm)
+library(grid)
+library(gridExtra)
+library(cowplot)
+library(cifti)
+library(gifti)
+library(abind)
+
+## settings ----
+
+theme_set(theme_classic(base_size = 8))
+
+## data ----
+
+pretrial <- fread(here("data", "pretrial_behavior.csv"))  ## behavior and events
+pretrial.subjsum <- fread(here("data", "pretrial_subjsumm.csv"))  ## summary of behavior and events / subj
+
+## paths ----
+
+sessi <- c("baseline", "proactive")
+sessi.short <- c("Bas", "Pro")
+glms <- "Congruency_EVENTS_censored"
+n.knots <- 6
+regressors <- c("PC50InCon", "biasInCon", "PC50Con", "biasCon")
+networks <- c("Vis", "DorsAttn", "SalVentAttn", "Cont", "Default", "SomMot", "Limbic")
+
+## atlases ----
+
+parcellation <- read_atlas("schaefer400")
+
+nodename <- Sys.info()["nodename"]
+if (nodename == "ccplinux1") {
+  dir.atlas <- "/data/nil-external/ccp/freund/atlases"
+  dir.schaefer <- "/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/ATLASES/"
+} else if (nodename == "CCP-FREUND") {
+  dir.atlas <- "C:/local/atlases"
+  dir.schaefer <- dir.atlas
+}
+
+hcp <- list(
+  L  = readGIfTI(
+    file.path(dir.atlas, "surf", "HCP_S1200_GroupAvg_v1", "S1200.L.midthickness_MSMAll.32k_fs_LR.surf.gii")
+  ),
+  R = readGIfTI(
+    file.path(dir.atlas, "surf", "HCP_S1200_GroupAvg_v1", "S1200.R.midthickness_MSMAll.32k_fs_LR.surf.gii")
+  )
+)
+
+over <- list(
+  L = parcellation$atlas[1:(nrow(parcellation$atlas) / 2)], 
+  R = parcellation$atlas[(nrow(parcellation$atlas) / 2):nrow(parcellation$atlas)]
+)
+
+# schaefer <- list(
+#   L = read_gifti2matrix(
+#     "/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/ATLASES/Schaefer2018_400Parcels_7Networks_order_L.label.gii"
+#     ) %>% c,
+#   R = read_gifti2matrix(
+#     "/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/ATLASES/Schaefer2018_400Parcels_7Networks_order_R.label.gii"
+#     ) %>% c
+# )
+
+## stats ----
+
+
+a <- readRDS(here("out", "qc", paste0("similarity-to-ccphcp-glms_shaefer400_2tr1knot.rds")))
+
+## remove all NA subjs ----
+
+has.stats <- apply(a, "subj", function(.) !any(is.na(c(.))))
+a <- a[, , , , has.stats, ]
+
+## wrangle to data.frame ----
+
+d <- reshape2::melt(a, value.name = "simil") %>% rename(session = sess)
+
+d$tr <- as.numeric(gsub("knot", "", d$knot)) * 2  ## knots to TRs
+
+d$network <- ""  ## add networks
+for (network.i in networks) d$network[grepl(network.i, d$roi)] <- network.i
+
+d$trial.type <- gsub("PC50|bias", "", d$param)  ## create variables
+d$pc <- gsub("InCon|Con", "", d$param)
+
+d$trial.type <- factor(d$trial.type, levels = c("Con", "InCon"))  ## to factors
+d$pc <- factor(d$pc, levels = c("PC50", "bias"))
+d$session <- factor(d$session, levels = c("baseline", "proactive"))
+
+
+
+```
+
+## all data (no aggregation)
+
+```{r}
+
+p.density.corr <- d %>%
+  filter(measu == "corr") %>%
+  ggplot(aes(x = simil)) +
+  geom_density(fill = "firebrick") +
+  facet_grid(vars(param), vars(session)) +
+  labs(x = "linear correlation")
+
+p.density.eucl <- d %>%
+  filter(measu == "eucl") %>%
+  ggplot(aes(x = simil)) +
+  geom_density(fill = "firebrick") +
+  facet_grid(vars(param), vars(session)) +
+  labs(x = "euclidean distance")
+
+grid.arrange(p.density.corr, p.density.eucl, ncol = 2, top = "pattern similarity across all parcels, knots, and subjs")
+
+p.boxplot.corr <- d %>%
+  filter(measu == "corr") %>%
+  ggplot(aes(y = simil)) +
+  geom_boxplot(fill = "firebrick", width = 0.25) +
+  facet_grid(vars(param), vars(session)) +
+  labs(y = "linear correlation")
+
+p.boxplot.eucl <- d %>%
+  filter(measu == "eucl") %>%
+  ggplot(aes(y = simil)) +
+  geom_boxplot(fill = "firebrick", width = 0.25) +
+  facet_grid(vars(param), vars(session)) +
+  labs(y = "euclidean distance")
+
+grid.arrange(p.boxplot.corr, p.boxplot.eucl, ncol = 2, top = "pattern similarity across all parcels, knots, and subjs")
+
+```
+
+## by knot (no aggregation)
+
+```{r}
+
+p.allparcels.pearson <- d %>%
+  filter(measu == "corr") %>%
+  ggplot(aes(knot, simil)) +
+  geom_violin(width = 0.5, fill = "firebrick") +
+  facet_grid(vars(param), vars(session)) +
+  labs(title = "linear correlation", x = "TR (post stimulus onset)", y = "beta")
+
+p.allparcels.euclidean <- d %>%
+  filter(measu == "eucl") %>%
+  ggplot(aes(knot, simil)) +
+  geom_violin(width = 0.5, fill = "firebrick") +
+  facet_grid(vars(param), vars(session)) +
+  labs(title = "euclidean distance", x = "TR (post stimulus onset)", y = "beta")
+
+grid.arrange(p.allparcels.pearson, p.allparcels.euclidean, ncol = 2, top = "all parcels")
+
+```
+
+Dissimilar patterns across all TRs, in all sessions.
+
+
+## by subject (aggregated across TR)
+
+```{r}
+
+d %>%
+  filter(measu == "corr") %>%
+  group_by(roi, param, session, subj) %>%
+  summarize(simil = tanh(mean(atanh(simil)))) %>%
+  ggplot(aes(subj, simil)) +
+  geom_boxplot(width = 0.5, fill = "firebrick") +
+  facet_grid(vars(param), vars(session)) +
+  labs(y = "linear correlation", x = "subj") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0, hjust = 0.5))
+
+d %>%
+  filter(measu == "eucl") %>%
+  group_by(roi, param, session, subj) %>%
+  summarize(simil = mean(simil)) %>%
+  ggplot(aes(subj, simil)) +
+  geom_boxplot(width = 0.5, fill = "firebrick") +
+  facet_grid(vars(param), vars(session)) +
+  labs(y = "euclidean distance", x = "subj") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0, hjust = 0.5))
+
+
+```
+
+Seems to be relatively dissimilar patterns in each subject as well.
+Perhaps some variability by subject\*session.
+
+
+## by parcel (aggregated across TR and subj)
+
+```{r}
+
+d %>%
+  filter(measu == "corr") %>%
+  group_by(roi, session, subj, network) %>%
+  summarize(simil = tanh(mean(atanh(simil)))) %>%
+  ggplot(aes(roi, simil)) +
+  geom_boxplot(aes(fill = network)) +
+  scale_fill_brewer(type = "qual", palette = 2) +
+  facet_grid(rows = vars(session), scale = "free") +
+  labs(y = "linear correlation", x = "parcel") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0, hjust = 0.5))
+
+```
+
+
+## similarities of subjs with no errors
+
+```{r}
+
+errors <- pretrial %>%
+  group_by(subj, session) %>%
+  summarize(error = mean(1 - acc, na.rm = TRUE)) %>%
+  mutate(session = ifelse(session == "bas", "baseline", "proactive"))
+
+d %>%
+  filter(measu == "corr") %>%
+  group_by(subj, session, param) %>%
+  summarize(simil = tanh(mean(atanh(simil)))) %>%
+  inner_join(errors, by = c("subj", "session")) %>%
+  group_by(session, param) %>%
+  summarize(r = cor(error, simil, method = "spearman"))
+
+d %>%
+  filter(measu == "corr") %>%
+  group_by(subj, session, param) %>%
+  summarize(simil = tanh(mean(atanh(simil)))) %>%
+  inner_join(errors, by = c("subj", "session")) %>%
+  ggplot(aes(rank(error), rank(simil))) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  facet_grid(vars(session), vars(param))
+
+
+subjs.no.errors <- errors %>% 
+  filter(error == 0) %>%
+  with(table(subj)) %>%
+  as.data.frame %>%
+  filter(Freq == 2) %>% 
+  pull(subj) %>%
+  as.character
+
+
+d %>%
+  filter(measu == "corr", subj %in% subjs.no.errors) %>%
+  ggplot(aes(y = simil)) +
+  geom_boxplot() +
+  facet_grid(vars(session), vars(param)) +
+  labs(y = "linear correlation")
+
+d %>%
+  filter(measu == "corr", subj %in% subjs.no.errors) %>%
+  View
+
+
+d %>%
+  filter(measu == "corr", subj %in% subjs.no.errors) %>%
+  group_by(session, param, roi, network) %>%
+  summarize(simil = tanh(mean(atanh(simil)))) %>%
+  ggplot(aes(roi, simil)) +
+  geom_point(aes(color = network)) +
+  facet_grid(vars(param), vars(session)) +
+  labs(y = "linear correlation")
+
+
+
+d %>%
+  filter(measu == "corr", subj %in% subjs.no.errors) %>%
+  group_by(subj, session) %>%
+  # group_by(subj, session, param) %>%
+  summarize(simil = tanh(mean(atanh(simil)))) %>%
+  left_join(errors, by = c("subj", "session")) %>%
+  ggplot(aes(rank(error), rank(simil))) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  facet_grid(cols = vars(session))
+  # facet_grid(vars(param), vars(session))
+
+
+
+
+
+```
+
+
+## simulation
+
+
+```{r}
+
+
+nsim <- 1E5
+
+set.seed(0)
+n <- 100
+X <- cbind(1, rnorm(x))
+signal <- x*2 + 10
+split1 <- sample.int(n, n/2)
+split2 <- -split1
+
+b.full <- matrix(NA, nrow = nsim, ncol = 2)
+colnames(b.full) <- c("b0", "b1")
+  
+b.piecewise <- matrix(NA, nrow = nsim, ncol = 2)
+colnames(b.piecewise) <- c("int", "x")
+  
+for (ii in seq_len(nsim)) {
+  
+  y <- signal + rnorm(n)
+
+  b.full[ii, ] <- coef(.lm.fit(X, y))
+  
+  coef.split1 <- coef(.lm.fit(X[split1, ], y[split1]))
+  coef.split2 <- coef(.lm.fit(X[split2, ], y[split2]))
+  
+  b.piecewise[ii, ] <- (coef.split1 + coef.split2) / 2
+  
+}
+
+  
+## means
+
+colMeans(b.full)
+colMeans(b.piecewise)
+
+colMeans(b.full) - colMeans(b.piecewise)
+
+## variance
+
+apply(b.full, 2, var)
+apply(b.piecewise, 2, var)
+
+apply(b.piecewise, 2, var) - apply(b.full, 2, var)
+
+
+cor(b.piecewise, b.full)
+
+plot(b.piecewise[, 1], b.full[, 1])
+plot(b.piecewise[, 2], b.full[, 2])
+
+
+
+
+```
+
+Piecewise method is unbiased but estimates have larger variance.
+Question: is this increase in variance substantial enough to explain the low correlations observed?
+
+## modeling
+
+```{r}
+
+d1 <- d %>% 
+  filter(measu == "corr") %>%
+  group_by(param, roi, subj, session) %>%
+  summarize(simil = mean(atanh(simil)))
+
+fit1 <- lm(simil ~ param + roi + subj + session, d1)
+
+fit.0subj <- update(fit1, . ~ . - subj)
+fit.0roi <- update(fit1, . ~ . - roi)
+fit.0sess <- update(fit1, . ~ . - session)
+fit.0param <- update(fit1, . ~ . - param)
+
+
+anova(fit1, fit.0subj)  ## variability across subjs
+anova(fit1, fit.0roi)  ## across rois
+anova(fit1, fit.0sess)  ## no session diffs
+anova(fit1, fit.0param)  ## across params
+
+
+```
+
