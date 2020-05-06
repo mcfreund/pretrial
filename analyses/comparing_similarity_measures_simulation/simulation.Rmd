@@ -30,65 +30,67 @@ Both of these are covariance matrices.
     Indicates the spatial structure of the non-signal variance within an ROI.
     - This is what spatial pre-whitening attempts to remove.
     - Here, I assumed the noise covariance fell off as a function of 'spatial distance' (i.e., in row/column indices), and that this function was a Gaussian kernel.
-    - To manipulate SNR, I multiplied **S** by a scalar value (while keeping **G** constant).
+    - To manipulate SNR, I multiplied $\Sigma$ by a scalar value (while keeping **G** constant).
 
 **2. Create B: the matrix that defines how the geometry is realized in a given set of voxels.**
   
   - $\mathbf{B}:$ a $V \times C$ matrix.
   - Each row of **B** indicates the true response of the voxel to each task condition.
   - This is what we'd like to recover in the GLM.
-  - To generate this I drew voxels from a multivariate distribution with mean vector $\mu_C$ and covariance matrix $\mathbf{G}$.
-    - i.e., for voxel $v$, (a row of the **B** matrix), $\mathbf{b}_v \sim N_C(\mu_C, \mathbf{G})$, where $\mu_C$ is a vector of $C$ zeros.
+  - To generate this I drew voxels from a multivariate distribution with mean vector $\mu_C = \mathbf{0}$ and covariance matrix $\mathbf{G}$.
+    - i.e., for voxel $v$, (a row of the **B** matrix), $\mathbf{B}_v \sim N_C(\mathbf{0}, \mathbf{G})$
 
 **3. Create X: design matrix**
   
-  - $\mathbf{X}:$  a \textit{T} (number of TRs) $\times$ \textit{C} binary matrix.
+  - $\mathbf{X}:$  a $\textit{T}$ (number of TRs) $\times \textit{C}$ binary matrix.
   - events indicated by 1
   - all columns (condition regressors) orthogonal
 
 **4. Create Y: raw voxel timecourses**
 
-  - $\mathbf{Y} = \mathbf{XB}^T + \epsilon$, where each row of $\epsilon$ (each TR) is a draw $\sim N_V(\mu_V, \Sigma)$
+  - $\mathbf{Y} = \mathbf{XB} + \epsilon_{T\times V}$, where each row of $\epsilon$ (each TR) is a draw $\sim N_V(\mathbf{0}, \Sigma)$
 
-**5. Estimate B via OLS**
+## estimation process
+
+**1. Estimate B via OLS**
 
   - $\hat{\mathbf{B}} = (\mathbf{X}^T\mathbf{X})^{-1}\mathbf{X}\mathbf{Y}$
 
-**6. Estimate G via RSA**
+**2. Estimate G via RSA**
 
   - Here I used **3 measures of similarity**
   
     1. linear correlation
     2. euclidean distance (squared)
     3. standardized euclidean distance (squared)
-      - where the pattern vectors are z-score standardized prior to calculating euclidean's distance
-      - renders the resulting euclidean proportional to linear correlation
+        - where the pattern vectors are z-score standardized prior to calculating euclidean's distance
+        - renders the resulting euclidean proportional to linear correlation
 
   - ... crossed with... **2 normalization procedures**, conducted on pattern estimates $\hat{\mathbf{B}}$
   
     1. unnormalized, or **"raw"**
     2. spatially prewhitened (aka 'multivariate noise normalized'), or **"white"**
-      - normalized by multiplying by the inverse of the residual (vertex by vertex) covariance matrix
+        - normalized by multiplying by the inverse of the residual (vertex by vertex) covariance matrix
     
   - ... crossed with... **2 methods of estimation**
     1. 'vanilla'
     
-      - standard between-run estimation
-      - yields true distance measures and true correlation statistics
-      - e.g., $r_\mathit{x, y} = [\text{cor}(x_\mathit{run 1}, y_\mathit{run 2}) + \text{cor}(x_\mathit{run 2}, y_\mathit{run 1})] / 2$
+        - standard between-run estimation
+        - yields true distance measures and true correlation statistics
+        - e.g., $r_\mathit{x, y} = [\text{cor}(x_\mathit{run 1}, y_\mathit{run 2}) + \text{cor}(x_\mathit{run 2}, y_\mathit{run 1})] / 2$
     2. 'cross-validated'
     
-      - non-standard estimation
-      - yields unbiased measures: expected value centered at true value of similarity
-      - however these measures are technically no longer distance measures, nor correlation statistics
-        - "cross-validated linear correlation" is not bounded within the range [-1, 1]
-        - "cross-validated euclidean" can be negative
+        - non-standard estimation
+        - yields unbiased measures: expected value centered at true value of similarity
+        - however these measures are technically no longer distance measures, nor correlation statistics
+          - "cross-validated linear correlation" is not bounded within the range [-1, 1]
+          - "cross-validated euclidean" can be negative
 
 For detailed descriptions of these measures, see the RMD within the **./analyses/comparing_similarity_measures_empirical/.** directory (currently in development).
 
 ```{r setup, include = FALSE}
 
-knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, cache = TRUE)
 library(mikeutils)
 library(MASS)
 library(magrittr)

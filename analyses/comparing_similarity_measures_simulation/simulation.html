@@ -339,6 +339,7 @@ summary {
 <li><a href="#intro">intro</a><ul>
 <li><a href="#purpose">purpose</a></li>
 <li><a href="#data-generating-process">data-generating process</a></li>
+<li><a href="#estimation-process">estimation process</a></li>
 <li><a href="#general-parameters-fixed-across-simulations">general parameters (fixed across simulations)</a></li>
 <li><a href="#general-notes">general notes</a></li>
 </ul></li>
@@ -391,7 +392,7 @@ summary {
 <ul>
 <li>This is what spatial pre-whitening attempts to remove.</li>
 <li>Here, I assumed the noise covariance fell off as a function of ‘spatial distance’ (i.e., in row/column indices), and that this function was a Gaussian kernel.</li>
-<li>To manipulate SNR, I multiplied <strong>S</strong> by a scalar value (while keeping <strong>G</strong> constant).</li>
+<li>To manipulate SNR, I multiplied <span class="math inline">\(\Sigma\)</span> by a scalar value (while keeping <strong>G</strong> constant).</li>
 </ul></li>
 </ul>
 <p><strong>2. Create B: the matrix that defines how the geometry is realized in a given set of voxels.</strong></p>
@@ -399,57 +400,57 @@ summary {
 <li><span class="math inline">\(\mathbf{B}:\)</span> a <span class="math inline">\(V \times C\)</span> matrix.</li>
 <li>Each row of <strong>B</strong> indicates the true response of the voxel to each task condition.</li>
 <li>This is what we’d like to recover in the GLM.</li>
-<li>To generate this I drew voxels from a multivariate distribution with mean vector <span class="math inline">\(\mu_C\)</span> and covariance matrix <span class="math inline">\(\mathbf{G}\)</span>.
+<li>To generate this I drew voxels from a multivariate distribution with mean vector <span class="math inline">\(\mu_C = \mathbf{0}\)</span> and covariance matrix <span class="math inline">\(\mathbf{G}\)</span>.
 <ul>
-<li>i.e., for voxel <span class="math inline">\(v\)</span>, (a row of the <strong>B</strong> matrix), <span class="math inline">\(\mathbf{b}_v \sim N_C(\mu_C, \mathbf{G})\)</span>, where <span class="math inline">\(\mu_C\)</span> is a vector of <span class="math inline">\(C\)</span> zeros.</li>
+<li>i.e., for voxel <span class="math inline">\(v\)</span>, (a row of the <strong>B</strong> matrix), <span class="math inline">\(\mathbf{B}_v \sim N_C(\mathbf{0}, \mathbf{G})\)</span></li>
 </ul></li>
 </ul>
 <p><strong>3. Create X: design matrix</strong></p>
 <ul>
-<li><span class="math inline">\(\mathbf{X}:\)</span> a  (number of TRs) <span class="math inline">\(\times\)</span>  binary matrix.</li>
+<li><span class="math inline">\(\mathbf{X}:\)</span> a <span class="math inline">\(\textit{T}\)</span> (number of TRs) <span class="math inline">\(\times \textit{C}\)</span> binary matrix.</li>
 <li>events indicated by 1</li>
 <li>all columns (condition regressors) orthogonal</li>
 </ul>
 <p><strong>4. Create Y: raw voxel timecourses</strong></p>
 <ul>
-<li><span class="math inline">\(\mathbf{Y} = \mathbf{XB}^T + \epsilon\)</span>, where each row of <span class="math inline">\(\epsilon\)</span> (each TR) is a draw <span class="math inline">\(\sim N_V(\mu_V, \Sigma)\)</span></li>
+<li><span class="math inline">\(\mathbf{Y} = \mathbf{XB} + \epsilon_{T\times V}\)</span>, where each row of <span class="math inline">\(\epsilon\)</span> (each TR) is a draw <span class="math inline">\(\sim N_V(\mathbf{0}, \Sigma)\)</span></li>
 </ul>
-<p><strong>5. Estimate B via OLS</strong></p>
+</div>
+<div id="estimation-process" class="section level2">
+<h2>estimation process</h2>
+<p><strong>1. Estimate B via OLS</strong></p>
 <ul>
 <li><span class="math inline">\(\hat{\mathbf{B}} = (\mathbf{X}^T\mathbf{X})^{-1}\mathbf{X}\mathbf{Y}\)</span></li>
 </ul>
-<p><strong>6. Estimate G via RSA</strong></p>
+<p><strong>2. Estimate G via RSA</strong></p>
 <ul>
 <li><p>Here I used <strong>3 measures of similarity</strong></p>
 <ol style="list-style-type: decimal">
 <li>linear correlation</li>
 <li>euclidean distance (squared)</li>
-<li>standardized euclidean distance (squared)</li>
-</ol>
+<li>standardized euclidean distance (squared)
 <ul>
 <li>where the pattern vectors are z-score standardized prior to calculating euclidean’s distance</li>
 <li>renders the resulting euclidean proportional to linear correlation</li>
 </ul></li>
+</ol></li>
 <li><p>… crossed with… <strong>2 normalization procedures</strong>, conducted on pattern estimates <span class="math inline">\(\hat{\mathbf{B}}\)</span></p>
 <ol style="list-style-type: decimal">
 <li>unnormalized, or <strong>“raw”</strong></li>
-<li>spatially prewhitened (aka ‘multivariate noise normalized’), or <strong>“white”</strong></li>
-</ol>
+<li>spatially prewhitened (aka ‘multivariate noise normalized’), or <strong>“white”</strong>
 <ul>
 <li>normalized by multiplying by the inverse of the residual (vertex by vertex) covariance matrix</li>
 </ul></li>
+</ol></li>
 <li><p>… crossed with… <strong>2 methods of estimation</strong></p>
 <ol style="list-style-type: decimal">
-<li>‘vanilla’</li>
-</ol>
+<li><p>‘vanilla’</p>
 <ul>
 <li>standard between-run estimation</li>
 <li>yields true distance measures and true correlation statistics</li>
 <li>e.g., <span class="math inline">\(r_\mathit{x, y} = [\text{cor}(x_\mathit{run 1}, y_\mathit{run 2}) + \text{cor}(x_\mathit{run 2}, y_\mathit{run 1})] / 2\)</span></li>
-</ul>
-<ol start="2" style="list-style-type: decimal">
-<li>‘cross-validated’</li>
-</ol>
+</ul></li>
+<li><p>‘cross-validated’</p>
 <ul>
 <li>non-standard estimation</li>
 <li>yields unbiased measures: expected value centered at true value of similarity</li>
@@ -459,6 +460,7 @@ summary {
 <li>“cross-validated euclidean” can be negative</li>
 </ul></li>
 </ul></li>
+</ol></li>
 </ul>
 <p>For detailed descriptions of these measures, see the RMD within the <strong>./analyses/comparing_similarity_measures_empirical/.</strong> directory (currently in development).</p>
 </div>
