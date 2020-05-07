@@ -1,0 +1,629 @@
+---
+title: 'Comparing measures of pattern similarity using DMCC2 Stroop'
+author: "mike freund"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    highlight: zenburn
+---
+
+
+# About
+
+## Measures of similarity
+
+Analyses within this document consider several different measures of similarity---12 measures in all.
+I define these measures here.
+
+In short, I consider three __types of similarity__: _linear correlation_, _Euclidean distance_, and _scaled Euclidean distance_.
+For each type of similarity, I also consider two different __methods of estimation__: _between-run_ and via _cross-validation_.
+Finally, I consider two different __types of normalization__: _"raw" (unnormalized)_, and spatially _pre-whitened_ (or "multivariate noise-normalized").
+Thus, in all, I compare $3 * 2 * 2 = 12$ different measures of similarity.
+
+
+### notation
+  * $N_\text{vert}$: number of vertices in a given parcel.
+  * $\mathbf{x}_{r}$: a row vector of beta estimates from run $r$ and condition $x$ for a given subject and parcel.
+  This vector would contain $N_\text{vert}$ beta values, one for each vertex.
+    * e.g., $\mathbf{x}_{1}$ would indicate the betas from run $1$.
+  * $\mathbf{y}_{r}$: same as above, but for condition $y$
+  * $\bar{x}_{r}$: the across-vertex, i.e., __parcel-wise__ mean for run $r$ and condition $x$ (i.e.,  $\mathbf{x}_{r}\mathbf{1}/N_\text{vert}$)
+
+### linear correlation
+
+
+#### between-run correlation
+
+The Pearson correlation between two conditions ($x, y$) for scanning runs 1 and 2.
+
+
+\[r_\textit{btw}(x_1, y_2) = \frac
+{
+(\mathbf{x}_{1} - \bar{x}_{1})
+(\mathbf{y}_{2} - \bar{y}_{2})^T
+}
+{\sqrt{(\mathbf{x}_1 - \bar{x}_1)^2
+(\mathbf{y}_2 - \bar{y}_2)^{2}}}\]
+
+Or equivalently,
+
+\[r_\textit{btw}(x_1, y_2) = 
+\frac
+{\text{cov}(\mathbf{x}_1, \mathbf{y}_2)}
+{\sqrt{\text{var}({\mathbf{x}_1})\text{var}({\mathbf{y}_2})}}\]
+
+* In other words, Pearson's can be thought of as the covariance between conditions $x$ and $y$ between run 1 and 2, scaled by the square-rooted product of their variances (i.e., the product of their standard deviations).
+
+* The Pearson correlation is *biased*, as with increasing noise, it shrinks towards zero, away from the true (noise-free) value of the correlation.
+
+#### cross-validated correlation
+
+The cross-validated correlation between two conditions ($x, y$) for scanning runs 1 and 2.
+
+\[r_\textit{cv}(x_1, y_2) = 
+\frac
+{\text{cov}(\mathbf{x}_1, \mathbf{y}_2)}
+{\sqrt{\text{cov}({\mathbf{x}_1, \mathbf{x}_2})\text{cov}({\mathbf{y}_1, \mathbf{y}_2})}}\]
+
+* The cross-validated correlation does not scale the covariance by the product of the standard deviations. 
+Instead, it scales the covariance by the square-rooted product of the *cross-run covariances* within each condition.
+
+* Think of the within-condition cross-run covariance as an estimate of the pattern relaibility.
+Correlations between patterns with poor reliability will be *increased*.
+This is closely related to the **spearman-brown prophecy** formula.
+
+* The cross-validated correlation **is not a true correlation statistic**: it can range greater than 1 or -1, and can be undefined if the product of the cross-run covariances is negative (because of the square root).
+Depending on the SNR, this potential for undefined similarities will likely pose a problem for group-level analyses, as there may be substantial portions of data missing.
+
+* But, the upside to this measure is that it is *unbiased*: the expected value of this statistic (i.e., mean) is centered at the true value, regardless of the level of noise.
+
+* This means that the expected value of the cross-validated correlation **does not depend on the amount of data** (i.e., number of trials in each GLM regressor).
+In theory, this should allow us to compare different trial types *without downsampling / throwing out data*.
+
+* note also that *two* correlations are now generated per pair of conditions (i.e., the similarity matrix is not symmetric).
+This is because we can calculate $r_\textit{cv}(x_1, y_2)$ and $r_\textit{cv}(x_2, y_1)$.
+
+### euclidean distance
+
+#### between-run euclidean distance
+
+The Euclidean distance between two conditions ($x, y$) for scanning runs 1 and 2.
+
+\[d_\textit{btw}(x_1, y_2) = \sqrt{(\mathbf{x}_{1} - \mathbf{y}_{2})(\mathbf{x}_{1} - \mathbf{y}_{2})^T} / N_\text{vert}\]
+
+* In other words, the root-sum-of-squares of the difference between $x$ in run 1 and $y$ in run 2.
+
+* To state another way: __the difference vector $\mathbf{x}_1 - \mathbf{y}_2$ is multiplied to itself (dot product) then this scalar value is square-rooted.__
+This can be thought of as yielding the *length of the difference vector*, i.e., distance from origin.
+
+* NB: The formula above differs from the typical euclidean distance as I've divided by the number of dimensions, $N_{vert}$.
+The typical euclidean distance increases with increasing dimenisons, so this division maintains comparaibility across parcels.
+
+* This measure is also *biased*, as in the presence of noise, identical patterns would appear as distant (dissimilar).
+
+
+#### cross-validated (squared) euclidean distance
+
+The cross-validated (squared) Euclidean distance between two conditions ($x, y$) for scanning runs 1 and 2.
+
+\[d^2_\textit{cv}(x_1, y_2) = (\mathbf{x}_{1} - \mathbf{y}_{1})(\mathbf{x}_{2} - \mathbf{y}_{2})^T / N_\text{vert}\]
+
+* The cross-validated euclidean distance does not multiply the difference vector to itself.
+Instead, it calculates the difference vectors *separately in each run*, then multiplies them *across runs*.
+
+* The idea is that if there *is* a consistent difference between patterns, it should cross-validate across scanning runs (i.e., the dot product should be positive).
+But, if the difference is purely noise, then the dot product should be, on average, zero (no successful crossvaliation).
+
+* Thus, the cross-validated euclidean distance **is not a true distance metric**: it can range less than 0.
+Note that, because it can be negative, the square-root is not taken and the distance $d$ is left in squared units ($d^2$).
+
+* Like cross-validated correlation, this measure is also unbiased in the sense that the distance between indistinguishable patterns will have an expected value of zero.
+
+* note also that, in contrast to the cross-validated correlation, a *single* distance measure is generated per pair of conditions (assuming two runs). I.e., cross-validated euclidean distance matrices *are* symmetric.
+
+### scaled euclidean distance
+
+* the scaled euclidean distance is equivalent to the euclidean distances above (both between-run and cross-validated), except that, prior to caclulating the distances,
+the patterns are *z-score normalized* by subtracting the mean and dividing by the standard deviation of across-vertex betas.
+
+* this makes the (squared) euclidean distance more-or-less equivalent to linear correlation (a quick google search will show the exact form of the relation).
+
+* I computed scaled euclidean mostly as a sanity check.
+
+
+### pre-whitening
+
+Let $\mathbf{E}_r$ represent the matrix of residual timecourses for a given run $r$, parcel, and subject.
+I.e., $\mathbf{E}_1$ is of dimension $N_{\text{TRs}} \times N_{\text{vertices}}$ and corresponds to run 1.
+
+The vertex-by-vertex covariance matrix of $\mathbf{E}_1$ is given by $\mathbf{S}_1 = \mathbf{E}_1^T\mathbf{E}_1$.
+
+These covariance matrices give the spatial correlation structure of the noise within a given parcel for each run. 
+Each off-diagonal entry indicates the degree to which two vertices had residual time-courses that covaried during that run.
+
+To pre-whiten beta coefficients $\mathbf{x}_1$, these covariance matrices are
+
+  1. regularized by shrinking them towards an identity matrix by a factor $\lambda$, e.g.:
+
+  \[\mathbf{S}^\textit{(shrnk.)}_1 = \lambda \mathbf{I} + (1 - \lambda) \mathbf{S}_1\]
+
+  2. inverted: e.g.:
+
+  \[\mathbf{S}^{\textit{(shrnk.)}-1}_1\]
+
+  3. then averaged across runs and square-rooted
+
+  \[[(\mathbf{S}^{\textit{(shrnk.)}-1}_1 + \mathbf{S}^{\textit{(shrnk.)}-1}_2) / 2]^{1/2}\]
+  
+This forms the (regularized) __mahalanobis prewhitening matrix__, __W__, which is applied to each beta estimate:
+
+\[\mathbf{x}_1^{(\textit{prewhitened})} = \mathbf{x}_1\mathbf{W}\]
+
+* For these these analyses, I used a shrinkage factor of $\lambda = 0.4$ for all parcels and subjects.
+
+* Because I calculated cross-validated measures "by hand" (i.e., without using R's functions for euclidean distance and correlation),
+I omitted the (time-consuming) square-root step for these measures, and applied the squared whitening matrix,  $\mathbf{W}^2 = [(\mathbf{S}^{\textit{(shrnk.)}-1}_1 + \mathbf{S}^{\textit{(shrnk.)}-1}_2) / 2]$, directly to the patterns within the similarity calculation.
+For example:
+\[d^2_\textit{cv, prewhitened}(x_1, y_2) = (\mathbf{x}_{1} - \mathbf{y}_{1})
+\mathbf{W}^2
+(\mathbf{x}_{2} - \mathbf{y}_{2})^T / N_\text{vert}\]
+
+
+## Questions these analyses attempt to answer empirically
+
+
+### 1. How does pre-whitening impact the sensitivity of RSA measures?
+
+* effect sizes: the magnitude of the Stroop RSA contrast
+  * non-crossvalidated measures: mean(PC50-I ~ PC50-I) - mean(PC50-I ~ PC50-C)
+  * crossvalidated measures: PC50-I ~ PC50-C > 0 (euclidean distance) or PC50-I ~ PC50-C < 1 (correlation)
+
+* effect sizes: the variability in the Stroop RSA contrast between subjects
+
+* effect sizes: the test-statistic for Stroop RSA contrast (sum-of-signed ranks)
+
+* significance / coverage of cortex: the set of parcels identified as significant
+
+* convergent validity: correlation between subject's Stroop RSA contrast for PC50 items and Bias items
+  * test would rely upon having measures that do not depend on amount of data.
+
+* noise ceilings: inter-subject consistency in similarity matrices (representational geometry)
+
+### 2. Was cross-validation successful at removing dependency on amount of data?
+
+* Compare Bias-I ~ PC50-C and Bias-C ~ PC50-I between baseline and proactive
+* dependency on amt of data: interaction, such that Bias-I is positive in proactive, Bias-C positive in baseline.
+* no dependency would show as no interaction
+
+
+
+```{r setup, include = FALSE}
+
+knitr::opts_chunk$set(
+  cache = TRUE, echo = FALSE, warning = FALSE, message = FALSE,
+  fig.align = 'center',
+  fig.width = 11.5, fig.fullwidth = TRUE
+  )
+
+set.seed(0)
+
+library(here)
+library(magrittr)
+library(dplyr)
+library(data.table)
+library(mikeutils)
+library(lme4)
+library(ggplot2)
+library(ggbeeswarm)
+library(grid)
+library(gridExtra)
+library(cowplot)
+library(cifti)
+library(gifti)
+library(abind)
+
+
+## functions ----
+
+fold <- function(m) {
+  
+  ## get average
+  mt <- t(m)
+  avg <- (m[lower.tri(m)] + mt[lower.tri(mt)]) / 2
+  
+  ## add back to matrix
+  m[lower.tri(m)] <- avg
+  m <- t(m)
+  m[lower.tri(m)] <- avg
+  
+  m
+  
+}
+
+
+## settings ----
+
+theme_set(theme_classic(base_size = 10))
+
+
+## data ----
+
+## behavior and events
+
+pretrial <- fread(here("data", "pretrial_behavior.csv"))
+pretrial.subjsum <- fread(here("data", "pretrial_subjsumm.csv"))
+
+## parcel-wise means
+
+means <- abind(
+  readRDS(here("out", "univa", "means_shaefer400_baseline_Congruency_EVENTS_tentzero01210_censored.rds")),
+  readRDS(here("out", "univa", "means_shaefer400_proactive_Congruency_EVENTS_tentzero01210_censored.rds")),
+  rev.along = 0
+)
+names(dimnames(means)) <- c("param", "run", "knot", "parcel", "subj", "session")
+dimnames(means)$session <- c("baseline", "proactive")
+
+## parcel-wise similarity matrices
+
+## vanilla RSA
+
+vanil <- abind(
+  abind(
+    readRDS(here("out", "rsa", "rmatrix_vanilla_corr_shaefer400_baseline_Congruency_EVENTS_tentzero01210_censored.rds")),
+    readRDS(here("out", "rsa", "rmatrix_vanilla_corr_shaefer400_proactive_Congruency_EVENTS_tentzero01210_censored.rds")),
+    rev.along = 0
+  ),
+  -abind(
+    readRDS(here("out", "rsa", "rmatrix_vanilla_eucl_shaefer400_baseline_Congruency_EVENTS_tentzero01210_censored.rds")),
+    readRDS(here("out", "rsa", "rmatrix_vanilla_eucl_shaefer400_proactive_Congruency_EVENTS_tentzero01210_censored.rds")),
+    rev.along = 0
+  ),
+  -abind(
+    readRDS(here("out", "rsa", "rmatrix_vanilla_neuc_shaefer400_baseline_Congruency_EVENTS_tentzero01210_censored.rds")),
+    readRDS(here("out", "rsa", "rmatrix_vanilla_neuc_shaefer400_proactive_Congruency_EVENTS_tentzero01210_censored.rds")),
+    rev.along = 0
+  ),
+  rev.along = 0
+)
+
+names(dimnames(vanil)) <- c(".row", ".col", "norma", "knot", "parcel", "subj", "session", "measure")
+dimnames(vanil)$session <- c("baseline", "proactive")
+dimnames(vanil)$measure <- c("corr", "neg.eucl", "neg.neuc")
+
+
+cross <- abind(
+  abind(
+    readRDS(here("out", "rsa", "rmatrix_crossva_corr_shaefer400_baseline_Congruency_EVENTS_tentzero01210_censored.rds")),
+    readRDS(here("out", "rsa", "rmatrix_crossva_corr_shaefer400_proactive_Congruency_EVENTS_tentzero01210_censored.rds")),
+    rev.along = 0
+  ),
+  -abind(
+    readRDS(here("out", "rsa", "rmatrix_crossva_eucl_shaefer400_baseline_Congruency_EVENTS_tentzero01210_censored.rds")),
+    readRDS(here("out", "rsa", "rmatrix_crossva_eucl_shaefer400_proactive_Congruency_EVENTS_tentzero01210_censored.rds")),
+    rev.along = 0
+  ),
+  -abind(
+    readRDS(here("out", "rsa", "rmatrix_crossva_neuc_shaefer400_baseline_Congruency_EVENTS_tentzero01210_censored.rds")),
+    readRDS(here("out", "rsa", "rmatrix_crossva_neuc_shaefer400_proactive_Congruency_EVENTS_tentzero01210_censored.rds")),
+    rev.along = 0
+  ),
+  rev.along = 0
+)
+
+names(dimnames(cross)) <- c(".row", ".col", "norma", "knot", "parcel", "subj", "session", "measure")
+dimnames(cross)$session <- c("baseline", "proactive")
+dimnames(cross)$measure <- c("corr", "neg.eucl", "neg.neuc")
+
+
+## variables ----
+
+networks <- c("Vis", "DorsAttn", "SalVentAttn", "Cont", "Default", "SomMot", "Limbic")
+
+## get subj lists
+
+subjs.analysis <- unique(pretrial.subjsum[subj.set == "analysis"]$subj)
+subjs.development <- unique(pretrial.subjsum[subj.set == "development"]$subj)
+subjs.bad <- unique(pretrial.subjsum[subj.set == "bad"]$subj)
+
+## filter by those with data
+
+has.stats <- apply(means, "subj", function(.) !any(is.na(c(.))))
+subjs.with.stats <- names(has.stats)[has.stats]
+
+## TODO
+## these subjects do not have stats
+# setdiff(c(subjs.analysis, subjs.development), subjs.with.stats)
+## could be due to
+##  - no 3d+t gifti -> have RAs run
+##  - no beta gifti -> diagnose problem and fit
+
+subjs.analysis <- intersect(subjs.analysis, subjs.with.stats)
+subjs.development <- intersect(subjs.development, subjs.with.stats)
+subjs.bad <- intersect(subjs.bad, subjs.with.stats)
+
+
+## models ----
+
+dnames <- dimnames(vanil)$.row
+m <- diag(length(dnames))
+dimnames(m) <- dimnames(vanil)[c(".row", ".col")]
+m[] <- 0
+lt <- lower.tri(m)
+
+is.incon <- grepl("InCon", dnames)
+is.congr <- grepl("PC50Con|biasCon", dnames)
+is.pc50  <- grepl("PC50", dnames)
+is.bias  <- grepl("bias", dnames)
+is.run1  <- grepl("run1", dnames)
+is.run2  <- grepl("run2", dnames)
+
+m.incon <- m
+m.congr <- m
+m.pc50 <- m
+m.bias <- m
+m.bias.any <- m
+m.run <- m
+m.ond <- m
+m.offd <- m
+
+m.incon[is.incon, is.incon] <- 1
+m.congr[is.congr, is.congr] <- 1
+m.pc50[is.pc50, is.pc50] <- 1
+m.bias.any[is.bias, ] <- 1
+m.bias.any[, is.bias] <- 1
+m.bias[is.bias, is.bias] <- 1
+m.run[is.run1, is.run1] <- 1
+m.run[is.run2, is.run2] <- 1
+diag(m.ond[is.run1, is.run2]) <- 1
+diag(m.ond[is.run2, is.run1]) <- 1
+m.offd <- 1 - m.ond
+diag(m.offd) <- 0
+
+mlist <- list(m.incon, m.congr, m.pc50, m.bias, m.bias.any, m.run, m.ond, m.offd)
+names(mlist) <- c("incon", "congr", "pc50", "bias", "bias.any", "run", "ond", "offd")
+
+rm(m.incon, m.congr, m.pc50, m.bias, m.bias.any, m.run, m.ond, m.offd)
+
+
+## atlases ----
+
+# list.files("/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/ATLASES")
+
+parcellation <- read_atlas("schaefer400")
+
+nodename <- Sys.info()["nodename"]
+if (nodename == "ccplinux1") {
+  dir.atlas <- "/data/nil-external/ccp/freund/atlases"
+  dir.schaefer <- "/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/ATLASES/"
+} else if (nodename == "CCP-FREUND") {
+  dir.atlas <- "C:/local/atlases"
+  dir.schaefer <- dir.atlas
+}
+
+
+hcp <- list(
+  L  = readGIfTI(
+    file.path(dir.atlas, "surf", "HCP_S1200_GroupAvg_v1", "S1200.L.midthickness_MSMAll.32k_fs_LR.surf.gii")
+    ),
+  R = readGIfTI(
+    file.path(dir.atlas, "surf", "HCP_S1200_GroupAvg_v1", "S1200.R.midthickness_MSMAll.32k_fs_LR.surf.gii")
+    )
+)
+
+over <- list(
+  L = parcellation$atlas[1:(nrow(parcellation$atlas) / 2)], 
+  R = parcellation$atlas[(nrow(parcellation$atlas) / 2):nrow(parcellation$atlas)]
+  )
+
+# schaefer <- list(
+#   L = read_gifti2matrix(
+#     "/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/ATLASES/Schaefer2018_400Parcels_7Networks_order_L.label.gii"
+#     ) %>% c,
+#   R = read_gifti2matrix(
+#     "/data/nil-bluearc/ccp-hcp/DMCC_ALL_BACKUPS/ATLASES/Schaefer2018_400Parcels_7Networks_order_R.label.gii"
+#     ) %>% c
+# )
+
+## subset data ----
+
+means <- means[, ,  , , subjs.analysis, ]
+vanil <- vanil[, , , , , subjs.analysis, , ]
+cross <- cross[, , , , , subjs.analysis, , ]
+
+
+## wrangle to data.frames ----
+
+
+means.d <- reshape2::melt(means, value.name = "m")
+means.d$tr <- as.numeric(gsub("knot", "", means.d$knot))
+
+means.d$network <- ""  ## add networks
+for (network.i in networks) means.d$network[grepl(network.i, means.d$parcel)] <- network.i
+
+# means.d$seconds <- means.d$tr * 1.2
+
+means.d$trial.type <- gsub("PC50|bias", "", means.d$param)
+means.d$pc <- gsub("InCon|Con", "", means.d$param)
+
+means.d$run <- factor(means.d$run, levels = c("run1", "run2"))
+means.d$trial.type <- factor(means.d$trial.type, levels = c("Con", "InCon"))
+means.d$pc <- factor(means.d$pc, levels = c("PC50", "bias"))
+means.d$session <- factor(means.d$session, levels = c("baseline", "proactive"))
+
+## covariance to correlation:
+
+cross[, , , , , , , "corr"] <- apply(
+  cross[, , , , , , , "corr"],
+  c("norma", "knot", "parcel", "subj", "session"),
+  cov2cor
+)
+## average upper and lower triangles:
+cross[, , , , , , , "corr"] <- apply(
+  cross[, , , , , , , "corr"],
+  c("norma", "knot", "parcel", "subj", "session"),
+  fold
+)
+mat2vec
+dimnames(cross)
+m <- cross[, , 1, 1, 1, 1, 1, "corr"]
+m[ut] <- NA
+m[]
+
+## discard diagonal and upper triangle
+
+ut <- upper.tri(diag(4), diag = TRUE)
+inds <- which(ut, arr.ind = TRUE)
+for (cell in seq_len(nrow(inds))) {
+  # cell = 1
+  cross[inds[cell, "row"], inds[cell, "col"], , , , , , ] <- NA
+}
+
+cross.d <- reshape2::melt(cross, na.rm = TRUE)  ## to data.frame
+
+cross.d %<>%
+  filter(knot %in% c("knot2", "knot3", "knot4")) %>%
+  group_by(.row, .col, norma, parcel, subj, session, measure) %>%
+  summarize(value = mean(value))
+
+```
+
+
+# Distributions of statistics
+
+```{r}
+
+cross.d %>%
+  ungroup %>%
+  ggplot() +
+  geom_boxplot(aes(y = value, fill = norma)) +
+  facet_grid(vars(session), vars(measure), scales = "free")
+
+```
+
+
+# Impact of prewhitening
+
+## Maps
+
+### Unthresholded
+
+### Thresholded
+
+## Test statistics
+
+```{r}
+
+
+group <- cross.d %>%
+  ungroup %>%
+  filter(measure %in% c("neg.neuc", "neg.eucl")) %>%
+  group_by(norma, session, measure, .row, .col, parcel) %>%
+  summarize(
+    p = wilcox.test(value, alternative = "less")$p.value,
+    w = wilcox.test(value, alternative = "less")$statistic,
+    m = mean(value)
+  ) %>%
+  group_by(norma, session, measure, .row, .col) %>%
+  mutate(p.fdr = p.adjust(p, method = "fdr"))
+ 
+unique(group$.row)
+unique(group$.col)
+
+
+rois.pro <- group %>% 
+  filter(p.fdr < 0.05, .row == "PC50Con", .col == "PC50InCon", session == "proactive") %>%
+  arrange(p.fdr) %>%
+  pull(parcel) %>%
+  unique
+
+
+rois.bas <- group %>% 
+  filter(p.fdr < 0.05, .row == "PC50Con", .col == "PC50InCon", session == "baseline") %>%
+  arrange(p.fdr) %>%
+  pull(parcel) %>%
+  unique
+  
+  
+
+names(dimnames(cross))
+
+cross.means <- apply(
+  cross[, , , 2:4, , , , ],
+  c(".row", ".col", "norma", "parcel", "session", "measure"),
+  mean
+)
+dimnames(cross.means)
+
+cross.means.d <- reshape2::melt(cross.means)
+
+cross.means.d$network <- ""  ## add networks
+for (network.i in networks) cross.means.d$network[grepl(network.i, cross.means.d$parcel)] <- network.i
+
+
+cross.means.d %>%
+  filter(parcel %in% rois.pro, measure == "neg.eucl", norma == "raw") %>%
+  mutate(.col = factor(.col, levels = rev(unique(.col)))) %>%
+  ggplot(aes(.row, .col, fill = value)) +
+  geom_raster() +
+  facet_grid(vars(session), vars(parcel), scales = "free")
+
+grid.arrange(
+
+  cross.means.d %>%
+  filter(
+    parcel %in% rois.bas[1:5],
+    # parcel %in% c("LH_Vis_1", "LH_Vis_2", "LH_Vis_3", "LH_Vis_4", "LH_Vis_5"), 
+    measure == "neg.neuc", session == "baseline", norma == "raw"
+    ) %>%
+  mutate(.col = factor(.col, levels = rev(unique(.col)))) %>%
+  ggplot(aes(.row, .col, fill = value)) +
+  geom_raster() +
+  facet_grid(cols = vars(parcel), scales = "free") +
+  labs(title = "raw, euclidean"),
+
+cross.means.d %>%
+  filter(
+    parcel %in% rois.bas[1:5],
+    # parcel %in% c("LH_Vis_1", "LH_Vis_2", "LH_Vis_3", "LH_Vis_4", "LH_Vis_5"), 
+    measure == "neg.neuc", session == "baseline", norma == "prw"
+    ) %>%
+  mutate(.col = factor(.col, levels = rev(unique(.col)))) %>%
+  ggplot(aes(.row, .col, fill = value)) +
+  geom_raster() +
+  facet_grid(cols = vars(parcel), scales = "free") +
+  labs(title = "prw, euclidean")
+  
+)
+
+
+
+
+group %>% filter(session == "baseline", norma == "raw", p.fdr < 0.05) %>% View("bas_raw")
+group %>% filter(session == "proactive", norma == "raw", p.fdr < 0.05) %>% View("pro_raw")
+
+group %>% filter(session == "baseline", norma == "prw", p.fdr < 0.05) %>% View("prw")
+group %>% filter(session == "proactive", norma == "prw", p.fdr < 0.05) %>% View("prw")
+
+```
+
+
+
+
+
+## Megaparcel-level summaries
+
+```{r}
+
+```
+
+
+## Parcel-level summaries
+
+```{r}
+
+```
+
+
+# Impact of cross-validation
+

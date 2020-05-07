@@ -1,0 +1,1204 @@
+---
+title: 'comparing similarity measures: simulations'
+author: "michael freund"
+date: "4/28/2020"
+output:
+  html_document:
+    toc: true
+    highlight: zenburn
+---
+
+# intro
+
+## purpose
+
+1. sanity check: verify that i've implemented the various similarity measures correctly by using the same RSA pipeline code on data where ground truth is known
+2. proof of concept: illustrate that using "cross-validated" measures may give us a way to get around trial balancing issues (i.e., differing numbers of trials across conditions).
+
+I generate data with a known similarity structure, then fit GLMs and recover this structure using various measures of similarity.
+
+## data-generating process
+
+Here's the basic model.
+Matrices corresponding to these descriptions are located under general parameters.
+
+**1. Create the signal, __G__ (for geometry), and the noise structure, $\Sigma$.**
+Both of these are covariance matrices.
+
+  - $\mathbf{G}:$ a $C$ (number of conditions) $\times C$ covariance matrix. What we want to recover in RSA.
+  - $\mathbf{\Sigma}:$ a $V$ (number of voxels) $\times \textit{V}$ covariance matrix.
+    Indicates the spatial structure of the non-signal variance within an ROI.
+    - This is what spatial pre-whitening attempts to remove.
+    - Here, I assumed the noise covariance fell off as a function of 'spatial distance' (i.e., in row/column indices), and that this function was a Gaussian kernel.
+    - To manipulate SNR, I multiplied $\Sigma$ by a scalar value (while keeping **G** constant).
+
+**2. Create B: the matrix that defines how the geometry is realized in a given set of voxels.**
+  
+  - $\mathbf{B}:$ a $V \times C$ matrix.
+  - Each row of **B** indicates the true response of the voxel to each task condition.
+  - This is what we'd like to recover in the GLM.
+  - To generate this I drew voxels from a multivariate distribution with mean vector $\mu_C = \mathbf{0}$ and covariance matrix $\mathbf{G}$.
+    - i.e., for voxel $v$, (a row of the **B** matrix), $\mathbf{B}_v \sim N_C(\mathbf{0}, \mathbf{G})$
+
+**3. Create X: design matrix**
+  
+  - $\mathbf{X}:$  a $\textit{T}$ (number of TRs) $\times \textit{C}$ binary matrix.
+  - events indicated by 1
+  - all columns (condition regressors) orthogonal
+
+**4. Create Y: raw voxel timecourses**
+
+  - $\mathbf{Y} = \mathbf{XB} + \epsilon_{T\times V}$, where each row of $\epsilon$ (each TR) is a draw $\sim N_V(\mathbf{0}, \Sigma)$
+
+## estimation process
+
+**1. Estimate B via OLS**
+
+  - $\hat{\mathbf{B}} = (\mathbf{X}^T\mathbf{X})^{-1}\mathbf{X}\mathbf{Y}$
+
+**2. Estimate G via RSA**
+
+  - Here I used **3 measures of similarity**
+  
+    1. linear correlation
+    2. euclidean distance (squared)
+    3. standardized euclidean distance (squared)
+        - where the pattern vectors are z-score standardized prior to calculating euclidean's distance
+        - renders the resulting euclidean proportional to linear correlation
+
+  - ... crossed with... **2 normalization procedures**, conducted on pattern estimates $\hat{\mathbf{B}}$
+  
+    1. unnormalized, or **"raw"**
+    2. spatially prewhitened (aka 'multivariate noise normalized'), or **"white"**
+        - normalized by multiplying by the inverse of the residual (vertex by vertex) covariance matrix
+    
+  - ... crossed with... **2 methods of estimation**
+    1. 'vanilla'
+    
+        - standard between-run estimation
+        - yields true distance measures and true correlation statistics
+        - e.g., $r_\mathit{x, y} = [\text{cor}(x_\mathit{run 1}, y_\mathit{run 2}) + \text{cor}(x_\mathit{run 2}, y_\mathit{run 1})] / 2$
+    2. 'cross-validated'
+    
+        - non-standard estimation
+        - yields unbiased measures: expected value centered at true value of similarity
+        - however these measures are technically no longer distance measures, nor correlation statistics
+          - "cross-validated linear correlation" is not bounded within the range [-1, 1]
+          - "cross-validated euclidean" can be negative
+
+For detailed descriptions of these measures, see the RMD within the **./analyses/comparing_similarity_measures_empirical/.** directory (currently in development).
+
+```{r setup, include = FALSE}
+
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, cache = TRUE)
+library(mikeutils)
+library(MASS)
+library(magrittr)
+library(dplyr)
+library(data.table)
+library(ggplot2)
+library(viridis)
+library(grid)
+library(gridExtra)
+library(foreach)
+library(doParallel)
+
+
+## settings ----
+
+theme_set(theme_light(base_size = 12))
+
+
+## functions ----
+
+generate_x <- function(n_tr, n_cond, n_tr_per_cond, n_tr_final_cond) {
+  ## assumes n_cond = 4
+  
+  if (n_tr < (n_cond - 1) * n_tr_per_cond + n_tr_final_cond) stop("not enough TRs")
+  
+  n_events <- (n_cond - 1) * n_tr_per_cond + n_tr_final_cond
+  
+  X <- matrix(0, nrow = n_events, ncol = n_cond)
+  for (cond_i in seq_len(n_cond - 1)) X[1:n_tr_per_cond + n_tr_per_cond * (cond_i - 1), cond_i] <- 1
+  X[(n_events - n_tr_final_cond + 1):n_events, n_cond] <- 1
+  
+  rbind(X, matrix(0, nrow = n_tr - nrow(X), ncol = n_cond))  ## add non-event trials
+
+
+}
+
+
+generate_y <- function(X, B, S, n_rt, n_vox) {
+  
+  E <- mvrnorm(n_tr, numeric(n_vox), S)
+  X %*% t(B) + E
+  
+}
+
+generate_noisecov <- function(n_vox, width) {
+  
+  ## gaussian kernel
+  
+  S <- diag(n_vox)
+  for (vox_i in 1:nrow(S)) {
+    for (vox_j in 1:ncol(S)) {
+      S[vox_i, vox_j] <- exp(-abs(vox_i - vox_j) / (2 * width^2))
+    }
+  }
+  
+  S
+  
+}
+
+estimate_simil <- function(fit_1, fit_2) {
+  
+  ## extract estimates
+  
+  Bhat_1 <- coef(fit_1)
+  Bhat_2 <- coef(fit_2)
+  Bhat <- t(rbind(coef(fit_1), coef(fit_2)))
+  
+  ## estimate prewhitening matrices
+  
+  W2_1 <- whitening(resid(fit_1))$W2
+  W2_2 <- whitening(resid(fit_2))$W2
+
+  W2 <- (W2_1 + W2_2) / 2
+  
+  ## vanilla RSA
+  
+  W <- expm::sqrtm(W2)  ## square root (mahalanobis whitening matrix)
+  Bhat_w <- W %*% Bhat
+  
+  vanil_corr_raw <- cor(Bhat)  ## pearson
+  vanil_corr_prw <- cor(Bhat_w)
+  
+  vanil_eucl_raw <- dist2mat(Bhat)^2 / n_vox  ## euclidean (squared)
+  vanil_eucl_prw <- dist2mat(Bhat_w)^2 / n_vox
+  
+  vanil_neuc_raw <- dist2mat(scale(Bhat))^2 / n_vox  ## norm. euclidean (squared)
+  vanil_neuc_prw <- dist2mat(scale(Bhat_w))^2 / n_vox
+  
+  ## cross-validated RSA
+  
+  Bhat_1c <- sweep(Bhat_1, 2, colMeans(Bhat_1))  ## center
+  Bhat_2c <- sweep(Bhat_2, 2, colMeans(Bhat_2))
+  
+  cross_corr_raw <- cov2cor(Bhat_1c %*% t(Bhat_2c))
+  cross_corr_prw <- cov2cor(Bhat_1c %*% W2 %*% t(Bhat_2c))
+  
+  cmat <- contrast_matrix(n_cond)
+  
+  cross_eucl_raw <- colSums(t(cmat %*% Bhat_1) * t(Bhat_2) %*% t(cmat)) / n_vox  ## euclidean (squared)
+  cross_eucl_raw <- matrix(cross_eucl_raw, ncol = n_cond) / n_vox
+  
+  cross_eucl_prw <- colSums(t(cmat %*% Bhat_1 %*% W2) * t(Bhat_2) %*% t(cmat)) / n_vox  ## (mahalanobis) (squared)
+  cross_eucl_prw <- matrix(cross_eucl_prw, ncol = n_cond) / n_vox
+  
+  cross_neuc_raw <- colSums(t(cmat %*% scale(Bhat_1)) * t(scale(Bhat_2)) %*% t(cmat)) / n_vox  ## norm. euclidean (squared)
+  cross_neuc_raw <- matrix(cross_neuc_raw, ncol = n_cond) / n_vox
+  
+  cross_neuc_prw <- colSums(t(cmat %*% scale(Bhat_1) %*% W2) * t(scale(Bhat_2)) %*% t(cmat)) / n_vox  ## (norm. mahalanobis) (squared)
+  cross_neuc_prw <- matrix(cross_neuc_prw, ncol = n_cond) / n_vox
+  
+  ## return
+  
+  list(
+    
+    vanil_corr_raw = vanil_corr_raw,
+    vanil_corr_prw = vanil_corr_prw,
+
+    vanil_eucl_raw = vanil_eucl_raw,
+    vanil_eucl_prw = vanil_eucl_prw,
+    
+    vanil_neuc_raw = vanil_neuc_raw,
+    vanil_neuc_prw = vanil_neuc_prw,
+    
+    cross_corr_raw = cross_corr_raw,
+    cross_corr_prw = cross_corr_prw,
+    
+    cross_eucl_raw = cross_eucl_raw,
+    cross_eucl_prw = cross_eucl_prw,
+    
+    cross_neuc_raw = cross_neuc_raw,
+    cross_neuc_prw = cross_neuc_prw
+    
+  )
+  
+}
+
+plot_matrix <- function(d) {
+  
+  d %>%
+    mutate(.col = factor(.col, levels = rev(unique(.col)))) %>%
+    ggplot(aes(.row, .col, fill = value)) +
+    geom_tile() +
+    # scale_fill_viridis() +
+    scale_fill_gradient(low = "black", high = "white") +
+    theme(
+      # legend.position = "none", 
+      panel.grid = element_blank(), panel.background = element_blank(),
+      axis.text = element_blank(), axis.ticks = element_blank(), axis.title = element_blank()
+      )
+
+}
+
+wrangle_groupmats <- function(rsa) {
+  
+  ## get full matrix for plotting
+  
+  rsa_full <- setNames(vector("list", length(rsatypes)), rsatypes)
+  
+  for (type_i in rsatypes) {
+    # type_i = "vanil_corr_raw"
+    
+    ## extract mats
+    
+    if (grepl("vanil", type_i)) {
+      l <- lapply(rsa, function(x) x[[type_i]][1:n_cond, (n_cond + 1):(2 * n_cond)])
+    } else {
+      l <- lapply(rsa, function(x) x[[type_i]])
+    }
+    
+    ## name columns
+    for (i in seq_along(l)) dimnames(l[[i]]) <- list(.row = letters[1:n_cond], .col = letters[1:n_cond])
+    
+    rsa_full[[type_i]] <- reshape2::melt(l)
+    
+  }
+  rsa_full <- bind_rows(rsa_full, .id = "type") %>% rename(subj = L1)
+  
+  ## negate euclidean (for interpretability):
+  rsa_full$value[grepl("euc", rsa_full$type)] <- -rsa_full$value[grepl("euc", rsa_full$type)]
+  
+  ## set NaNs to zero:
+  rsa_full$value[is.nan(rsa_full$value)] <- 0
+  
+  ## split "type" col:
+  rsa_full <- cbind(
+    rsa_full,
+    reshape2::colsplit(rsa_full$type, "_", c("method", "measure", "normalization"))
+  )
+  
+  ## average across subjects and return:
+  bind_rows(
+    
+    rsa_full %>%
+      filter(type %in% c("vanil_corr_raw", "vanil_corr_prw")) %>%
+      group_by(method, measure, normalization, type, .row, .col) %>%
+      summarize(value = tanh(mean(atanh(value)))),
+    
+    rsa_full %>%
+      filter(!type %in% c("vanil_corr_raw", "vanil_corr_prw")) %>%
+      group_by(method, measure, normalization, type, .row, .col) %>%
+      summarize(value = mean(value))
+    
+  )
+  
+}
+
+wrangle_subjvecs <- function(rsa) {
+  
+  rsa_half <- setNames(vector("list", length(rsatypes)), rsatypes)
+  for (type_i in rsatypes) {
+    # type_i = "cross_corr_raw"
+    
+    ## get mats
+    
+    if (grepl("vanil", type_i)) {
+      l <- lapply(rsa, function(x) x[[type_i]][1:n_cond, (n_cond + 1):(2 * n_cond)])
+    } else {
+      l <- lapply(rsa, function(x) x[[type_i]])
+    }
+    
+    ## average across triangles (only necessary for vanil measures and cv corr, but won't hurt to do for all)
+    l <- lapply(l, fold)
+    
+    ## name columns
+    for (i in seq_along(l)) dimnames(l[[i]]) <- list(.row = letters[1:n_cond], .col = letters[1:n_cond])
+    
+    ## set NaNs to 0
+    for (i in seq_along(l)) l[[i]][is.nan(l[[i]])] <- 0
+    
+    rsa_half[[type_i]] <- bind_rows(lapply(l, mat2vec), .id = "subj")  ## get lower triangles
+    
+  }
+  rsa_half <- bind_rows(rsa_half, .id = "type")
+  
+  ## negate euclidean (for interpretability):
+  rsa_half$value[grepl("euc", rsa_half$type)] <- -rsa_half$value[grepl("euc", rsa_half$type)]
+  
+  ## make cell col and split "type" col:
+  rsa_half$cell <- paste0(rsa_half$.row, rsa_half$.col)
+  rsa_half <- cbind(
+    rsa_half,
+    reshape2::colsplit(rsa_half$type, "_", c("method", "measure", "normalization"))
+  )
+  
+  rsa_half
+ 
+}
+
+
+
+fold <- function(m) {
+  
+  ## get average
+  mt <- t(m)
+  avg <- (m[lower.tri(m)] + mt[lower.tri(mt)]) / 2
+  
+  ## add back to matrix
+  m[lower.tri(m)] <- avg
+  m <- t(m)
+  m[lower.tri(m)] <- avg
+  
+  m
+  
+}
+
+
+## variables ----
+
+rsatypes <- c(
+  "vanil_corr_raw",
+  "vanil_corr_prw",
+  "vanil_eucl_raw",
+  "vanil_eucl_prw",
+  "vanil_neuc_raw",
+  "vanil_neuc_prw",
+  "cross_corr_raw",
+  "cross_corr_prw",
+  "cross_eucl_raw",
+  "cross_eucl_prw",
+  "cross_neuc_raw",
+  "cross_neuc_prw"
+)
+
+
+## parameters ----
+
+n_subj <- 30
+n_vox <- 100
+n_cond <- 20
+n_tr <- 1000
+n_tr_per_cond <- 10
+width <- 0.9
+S_0.9 <- generate_noisecov(n_vox, width)
+
+G <- diag(n_cond)
+G[1, 2] <- 1
+G[2, 1] <- 1
+G[G == 0] <- 0.5
+
+```
+
+## general parameters (fixed across simulations)
+
+* number of subjects (independent simulations): `r n_subj`
+  - for each subject, **B** and $\epsilon$ were simulated anew
+* number of voxels:  `r n_vox`
+* number of conditions:  `r n_cond`
+* number of TRs:  `r n_tr`
+* number of scanning runs: 2
+* amount of spatial auto-correlation (width of kernel for noise covariance $\Sigma$):  `r width`
+
+## general notes
+
+* to make correlation and euclidean distances more easily comparable, all euclidean distances were negated
+* The cross-validated correlation has the potential to be undefined (as result of negative square root, or zero, in denominator).
+In even small to moderate amounts of noise, the measure can become unstable (as was the case here).
+To run the same plots / stats on these cross-valdated correlations, I set all NaN values equal to zero.
+This is obviously not ideal.
+For interpreting the simulation results, don't focus on cross-validated correlation.
+
+```{r, fig.height = 5, fig.width = 9}
+
+## G
+
+rownames(G) <- letters[1:nrow(G)]
+colnames(G) <- letters[1:ncol(G)]
+G_d <- reshape2::melt(G)
+
+pG <- G_d %>%
+  
+  mutate(Var2 = factor(Var2, levels = rev(unique(Var2)))) %>%
+  
+  ggplot(aes(Var1, Var2, fill = value)) +
+  geom_tile() +
+  
+  scale_fill_gradient(low = "black", high = "white") +
+  theme(
+    legend.position = "none",
+    panel.grid = element_blank(), panel.background = element_blank(),
+    axis.text.y = element_text(size = 15),
+    axis.text.x = element_text(size = 15),
+    axis.ticks = element_blank()
+    ) +
+  scale_x_discrete(position = "top") +
+  labs(title = "G: signal / true geometry", x = "condition", y = "condition")
+
+## S
+
+S_0.9_d <- reshape2::melt(S_0.9)
+
+pS <- S_0.9_d %>%
+  
+  mutate(Var2 = factor(Var2, levels = rev(unique(Var2)))) %>%
+  
+  ggplot(aes(Var1, Var2, fill = value)) +
+  geom_tile() +
+  
+  scale_fill_gradient(low = "black", high = "white") +
+  theme(
+    legend.position = "none",
+    panel.grid = element_blank(), panel.background = element_blank(),
+    axis.text.y = element_text(size = 5),
+    axis.text.x = element_text(size = 5),
+    axis.ticks = element_blank()
+    ) +
+  scale_x_discrete(position = "top") +
+  labs(title = expression(Sigma*": noise structure"), x = "voxel", y = "voxel")
+
+grid.arrange(pG, pS, ncol = 2)
+
+```
+
+
+# simulation 1: balanced design, high SNR
+
+Just to show that, under unrealistically high SNR, these methods all recover the correct geometry.
+
+
+```{r sim_balanced}
+
+## simulate
+
+snr <- 1
+X <- generate_x(n_tr, n_cond, n_tr_per_cond, n_tr_per_cond)
+
+set.seed(0)
+rsa <- vector("list", n_subj)
+for (subj_i in seq_len(n_subj)) {
+
+  B <- mvrnorm(n_vox, numeric(n_cond), Sigma = G)  ## generate
+  Y_1 <- generate_y(X, B, S_0.9 * snr, n_rt, n_vox)
+  Y_2 <- generate_y(X, B, S_0.9 * snr, n_rt, n_vox)
+
+  fit_1 <- .lm.fit(X, Y_1)  ## estimate
+  fit_2 <- .lm.fit(X, Y_2)
+  rsa[[subj_i]] <- estimate_simil(fit_1, fit_2)
+
+}
+
+## wrangle
+
+groupmats <- wrangle_groupmats(rsa)  ## full matrices (for plotting)
+
+subjvecs <- wrangle_subjvecs(rsa)  ## half matrices (lower tris, for stats)
+
+## fit RSA models (mean contrast)
+
+subjstats <- bind_rows(
+
+  subjvecs %>%
+
+    filter(type %in% c("vanil_corr_raw", "vanil_corr_prw")) %>%
+    group_by(subj, method, measure, normalization, type) %>%
+    summarize(
+      value = tanh(mean(atanh(value[cell == "ba"])) - mean(atanh(value[!cell %in% "ba"])))
+    ),
+
+  subjvecs %>%
+
+    filter(!type %in% c("vanil_corr_raw", "vanil_corr_prw")) %>%
+    group_by(subj, method, measure, normalization, type) %>%
+    summarize(
+      value = mean(value[cell == "ba"]) - mean(value[!cell %in% "ba"])
+    )
+)
+
+groupstats <- subjstats %>%
+  
+  group_by(method, measure, normalization) %>%
+  summarize(
+    w = wilcox.test(value, alternative = "greater")$statistic,
+    p = wilcox.test(value, alternative = "greater")$p.value
+    )
+
+```
+
+
+## parameters
+
+* number of TRs per condition: `r n_tr_per_cond`
+* snr: `r snr`
+
+
+## results: similarity matrices
+
+
+```{r sim_balanced_mats, fig.width = 11, fig.height = 6}
+
+grid.arrange(
+  
+  groupmats %>% filter(type == "vanil_corr_raw") %>%  plot_matrix + labs(title = "correlation raw"),
+  groupmats %>% filter(type == "vanil_eucl_raw") %>%  plot_matrix + labs(title = "euclidean raw"),
+  groupmats %>% filter(type == "vanil_neuc_raw") %>%  plot_matrix + labs(title = "standardized euclidean raw"),
+  
+  groupmats %>% filter(type == "vanil_corr_prw") %>%  plot_matrix + labs(title = "correlation white"),
+  groupmats %>% filter(type == "vanil_eucl_prw") %>%  plot_matrix + labs(title = "euclidean white"),
+  groupmats %>% filter(type == "vanil_neuc_prw") %>%  plot_matrix + labs(title = "standardized euclidean white"),
+  
+  ncol = 3,
+  
+  top = textGrob("vanilla RSA", gp = gpar(fontsize = 16, fontface = 2))
+  
+)
+
+grid.arrange(
+  
+  groupmats %>% filter(type == "cross_corr_raw") %>%  plot_matrix + labs(title = "correlation raw"),
+  groupmats %>% filter(type == "cross_eucl_raw") %>%  plot_matrix + labs(title = "euclidean raw"),
+  groupmats %>% filter(type == "cross_neuc_raw") %>%  plot_matrix + labs(title = "standardized euclidean raw"),
+  
+  groupmats %>% filter(type == "cross_corr_prw") %>%  plot_matrix + labs(title = "correlation white"),
+  groupmats %>% filter(type == "cross_eucl_prw") %>%  plot_matrix + labs(title = "euclidean white"),
+  groupmats %>% filter(type == "cross_neuc_prw") %>%  plot_matrix + labs(title = "standardized euclidean white"),
+  
+  ncol = 3,
+  
+  top = textGrob("cross-validated RSA", gp = gpar(fontsize = 16, fontface = 2))
+  
+)
+
+```
+
+
+# simulation 2: balanced design, range of SNRs
+
+How do these measures behave as a function of SNR?
+
+```{r sim_grid_snr, cache = TRUE}
+
+## simulate
+
+snr <- c(1:9, seq(10, 100, 10), 200, 300, 400)
+
+n_cores <- detectCores()
+cl <- makeCluster(n_cores - 1)
+registerDoParallel(cl)
+
+res_subjstats_grid_snr <- foreach(snr_i = snr, .packages = c("MASS", "mikeutils", "dplyr"), .inorder = FALSE) %dopar% {
+  # snr_i = 1
+
+  set.seed(0)
+  rsa <- vector("list", n_subj)
+  for (subj_i in seq_len(n_subj)) {
+
+    B <- mvrnorm(n_vox, numeric(n_cond), Sigma = G)  ## generate
+    Y_1 <- generate_y(X, B, S_0.9 * snr_i, n_rt, n_vox)
+    Y_2 <- generate_y(X, B, S_0.9 * snr_i, n_rt, n_vox)
+
+    fit_1 <- .lm.fit(X, Y_1)  ## estimate
+    fit_2 <- .lm.fit(X, Y_2)
+    rsa[[subj_i]] <- estimate_simil(fit_1, fit_2)
+
+  }
+
+  subjvecs <- wrangle_subjvecs(rsa)  ## half matrices (lower tris, for stats)
+
+  subjstats <- bind_rows(
+
+    subjvecs %>%
+
+      filter(type %in% c("vanil_corr_raw", "vanil_corr_prw")) %>%
+      group_by(subj, method, measure, normalization, type) %>%
+      summarize(
+        value = tanh(mean(atanh(value[cell == "ba"])) - mean(atanh(value[!cell %in% "ba"])))
+      ),
+
+    subjvecs %>%
+
+      filter(!type %in% c("vanil_corr_raw", "vanil_corr_prw")) %>%
+      group_by(subj, method, measure, normalization, type) %>%
+      summarize(
+        value = mean(value[cell == "ba"]) - mean(value[!cell %in% "ba"])
+      )
+  )
+
+  subjstats$snr <- snr_i
+
+  list(subjstats = subjstats, rsa = rsa)
+
+}
+
+stopCluster(cl)
+
+## wrangle
+
+snr.used <- unlist(lapply(res_subjstats_grid_snr, function(x) x$subjstats$snr[1]))
+
+groupmats_grid_snr <- res_subjstats_grid_snr %>% 
+  lapply(function(x) x$rsa) %>%
+  lapply(wrangle_groupmats)
+names(groupmats_grid_snr) <- paste0("snr", snr.used)
+
+subjstats_grid_snr <- res_subjstats_grid_snr %>% 
+  lapply(function(x) x$subjstats) %>% 
+  bind_rows %>% 
+  ungroup %>%
+  mutate(method = factor(method, levels = rev(unique(method))))  ## for plotting
+
+groupstats_grid_snr <- subjstats_grid_snr %>%
+  group_by(method, measure, normalization, snr) %>%
+  summarize(
+    w = wilcox.test(value, alternative = "greater")$statistic,
+    p = wilcox.test(value, alternative = "greater")$p.value
+    )
+
+```
+
+## parameters
+
+* range of snrs tested: `r range(snr)`
+* number of TRs per condition: `r n_tr_per_cond`
+
+## results: similarity matrices
+
+### 1/50 SNR
+
+```{r sim_grid_snr_mats_50, fig.width = 11, fig.height = 6}
+
+grid.arrange(
+  
+  groupmats_grid_snr$snr50 %>% filter(type == "vanil_corr_raw") %>%  plot_matrix + labs(title = "correlation raw"),
+  groupmats_grid_snr$snr50 %>% filter(type == "vanil_eucl_raw") %>%  plot_matrix + labs(title = "euclidean raw"),
+  groupmats_grid_snr$snr50 %>% filter(type == "vanil_neuc_raw") %>%  plot_matrix + labs(title = "standardized euclidean raw"),
+  
+  groupmats_grid_snr$snr50 %>% filter(type == "vanil_corr_prw") %>%  plot_matrix + labs(title = "correlation white"),
+  groupmats_grid_snr$snr50 %>% filter(type == "vanil_eucl_prw") %>%  plot_matrix + labs(title = "euclidean white"),
+  groupmats_grid_snr$snr50 %>% filter(type == "vanil_neuc_prw") %>%  plot_matrix + labs(title = "standardized euclidean white"),
+  
+  ncol = 3,
+  
+  top = textGrob("vanilla RSA", gp = gpar(fontsize = 16, fontface = 2))
+  
+)
+
+grid.arrange(
+  
+  groupmats_grid_snr$snr50 %>% filter(type == "cross_corr_raw") %>%  plot_matrix + labs(title = "correlation raw"),
+  groupmats_grid_snr$snr50 %>% filter(type == "cross_eucl_raw") %>%  plot_matrix + labs(title = "euclidean raw"),
+  groupmats_grid_snr$snr50 %>% filter(type == "cross_neuc_raw") %>%  plot_matrix + labs(title = "standardized euclidean raw"),
+  
+  groupmats_grid_snr$snr50 %>% filter(type == "cross_corr_prw") %>%  plot_matrix + labs(title = "correlation white"),
+  groupmats_grid_snr$snr50 %>% filter(type == "cross_eucl_prw") %>%  plot_matrix + labs(title = "euclidean white"),
+  groupmats_grid_snr$snr50 %>% filter(type == "cross_neuc_prw") %>%  plot_matrix + labs(title = "standardized euclidean white"),
+  
+  ncol = 3,
+  
+  top = textGrob("cross-validated RSA", gp = gpar(fontsize = 16, fontface = 2))
+  
+)
+
+```
+
+### 1/100 SNR
+
+```{r sim_grid_snr_mats_100, fig.width = 11, fig.height = 6}
+
+grid.arrange(
+  
+  groupmats_grid_snr$snr100 %>% filter(type == "vanil_corr_raw") %>%  plot_matrix + labs(title = "correlation raw"),
+  groupmats_grid_snr$snr100 %>% filter(type == "vanil_eucl_raw") %>%  plot_matrix + labs(title = "euclidean raw"),
+  groupmats_grid_snr$snr100 %>% filter(type == "vanil_neuc_raw") %>%  plot_matrix + labs(title = "standardized euclidean raw"),
+  
+  groupmats_grid_snr$snr100 %>% filter(type == "vanil_corr_prw") %>%  plot_matrix + labs(title = "correlation white"),
+  groupmats_grid_snr$snr100 %>% filter(type == "vanil_eucl_prw") %>%  plot_matrix + labs(title = "euclidean white"),
+  groupmats_grid_snr$snr100 %>% filter(type == "vanil_neuc_prw") %>%  plot_matrix + labs(title = "standardized euclidean white"),
+  
+  ncol = 3,
+  
+  top = textGrob("vanilla RSA", gp = gpar(fontsize = 16, fontface = 2))
+  
+)
+
+grid.arrange(
+  
+  groupmats_grid_snr$snr100 %>% filter(type == "cross_corr_raw") %>%  plot_matrix + labs(title = "correlation raw"),
+  groupmats_grid_snr$snr100 %>% filter(type == "cross_eucl_raw") %>%  plot_matrix + labs(title = "euclidean raw"),
+  groupmats_grid_snr$snr100 %>% filter(type == "cross_neuc_raw") %>%  plot_matrix + labs(title = "standardized euclidean raw"),
+  
+  groupmats_grid_snr$snr100 %>% filter(type == "cross_corr_prw") %>%  plot_matrix + labs(title = "correlation white"),
+  groupmats_grid_snr$snr100 %>% filter(type == "cross_eucl_prw") %>%  plot_matrix + labs(title = "euclidean white"),
+  groupmats_grid_snr$snr100 %>% filter(type == "cross_neuc_prw") %>%  plot_matrix + labs(title = "standardized euclidean white"),
+  
+  ncol = 3,
+  
+  top = textGrob("cross-validated RSA", gp = gpar(fontsize = 16, fontface = 2))
+  
+)
+
+
+```
+
+### 1/400 SNR
+
+```{r sim_grid_snr_mats_400, fig.width = 11, fig.height = 6}
+
+grid.arrange(
+  
+  groupmats_grid_snr$snr400 %>% filter(type == "vanil_corr_raw") %>%  plot_matrix + labs(title = "correlation raw"),
+  groupmats_grid_snr$snr400 %>% filter(type == "vanil_eucl_raw") %>%  plot_matrix + labs(title = "euclidean raw"),
+  groupmats_grid_snr$snr400 %>% filter(type == "vanil_neuc_raw") %>%  plot_matrix + labs(title = "standardized euclidean raw"),
+  
+  groupmats_grid_snr$snr400 %>% filter(type == "vanil_corr_prw") %>%  plot_matrix + labs(title = "correlation white"),
+  groupmats_grid_snr$snr400 %>% filter(type == "vanil_eucl_prw") %>%  plot_matrix + labs(title = "euclidean white"),
+  groupmats_grid_snr$snr400 %>% filter(type == "vanil_neuc_prw") %>%  plot_matrix + labs(title = "standardized euclidean white"),
+  
+  ncol = 3,
+  
+  top = textGrob("vanilla RSA", gp = gpar(fontsize = 16, fontface = 2))
+  
+)
+
+grid.arrange(
+  
+  groupmats_grid_snr$snr400 %>% filter(type == "cross_corr_raw") %>%  plot_matrix + labs(title = "correlation raw"),
+  groupmats_grid_snr$snr400 %>% filter(type == "cross_eucl_raw") %>%  plot_matrix + labs(title = "euclidean raw"),
+  groupmats_grid_snr$snr400 %>% filter(type == "cross_neuc_raw") %>%  plot_matrix + labs(title = "standardized euclidean raw"),
+  
+  groupmats_grid_snr$snr400 %>% filter(type == "cross_corr_prw") %>%  plot_matrix + labs(title = "correlation white"),
+  groupmats_grid_snr$snr400 %>% filter(type == "cross_eucl_prw") %>%  plot_matrix + labs(title = "euclidean white"),
+  groupmats_grid_snr$snr400 %>% filter(type == "cross_neuc_prw") %>%  plot_matrix + labs(title = "standardized euclidean white"),
+  
+  ncol = 3,
+  
+  top = textGrob("cross-validated RSA", gp = gpar(fontsize = 16, fontface = 2))
+  
+)
+
+```
+
+
+## results: RSA model fits (mean contrasts)
+
+```{r sim_grid_snr_plot, fig.width = 11, fig.height = 6}
+
+subjstats_grid_snr %>%
+  
+  mutate(
+    snrlab = factor(snr),
+    snrlab = reorder(snrlab, snr),
+    method = factor(method, level = unique(method)),
+    ) %>%
+  
+  ggplot(aes(snrlab, value, group = normalization, color = normalization)) +
+  stat_summary(fun.data = "mean_cl_boot") +
+  stat_summary(fun.y = mean, geom = "line", size = 1) +
+  
+  facet_wrap(
+    vars(method, measure), scales = "free_y",
+    labeller = labeller(
+      method = c(vanil = "vanilla", cross = "cross-validated"),
+      measure = c(corr = "correlation", eucl = "euclidean", neuc = "standardized euclidean")
+      )
+    ) +
+  scale_color_brewer(type = "qual", palette = 2) +
+  scale_fill_brewer(type = "qual", palette = 2) +
+  labs(y = "RSA model fit (mean contrast)", x = "1 / SNR", title = "estimated mean differences") +
+  theme(
+    strip.background = element_blank(), 
+    strip.text = element_text(color = "grey20"),
+    strip.placement = "outside", axis.ticks.x = element_blank(), 
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)
+    )
+
+groupstats_grid_snr %>%
+  
+  ungroup %>%
+  mutate(method = factor(method, level = rev(unique(method)))) %>%
+
+  ggplot(aes(snr, w)) +
+  geom_line(aes(color = normalization), size = 2) +
+  
+  facet_wrap(
+    vars(method, measure), scales = "free_y",
+    labeller = labeller(
+      method = c(vanil = "vanilla", cross = "cross-validated"),
+      measure = c(corr = "correlation", eucl = "euclidean", neuc = "standardized euclidean")
+      )
+    ) +
+  scale_color_brewer(type = "qual", palette = 2) +
+  labs(y = "sum of signed ranks", x = "1 / SNR", title = "test statistics") +
+  theme(strip.background = element_blank(), strip.placement = "outside", strip.text = element_text(color = "grey20"))
+
+```
+
+### notes
+
+* prewhitening obviously increases sensivitivy across all noise thresholds
+* prewhitening works by primarily tempering noise variability rather than increasing the observed mean differences between similarity matrix cells (i.e., decreases denominator of t-test rather than numerator).
+* vanilla correlation and vanilla standardized euclidean look essentially identical (as expected)
+* cross-validated correlation highly unstable.
+
+
+# simulation 3: unbalanced designs, range of SNR
+
+Cross-validated measures of similarity are 'unbiased': their expected value is the true value.
+This should mean that the mean of these measures does not depend on the SNR, or on the number of trials that feed into the pattern estimates.
+If unbiased measures are insensitive to number of trials / TRs, then they would be useful in imbalanced designs (like ours).
+
+Here I increase the number of TRs within a single condition, **condition t**, while keeping the TRs for other conditions constant.
+I run this trial number simulation at a few different SNRs.
+
+```{r sim_grid_trialcounts, cache = TRUE}
+
+## simulate
+
+snr <- c(1, 50, 100)
+n_events <- seq(10, 100, 20)
+
+cl <- makeCluster(n_cores - 1)
+registerDoParallel(cl)
+
+res_subjstats_grid_trialcounts <- foreach(
+  n_events_i = n_events, 
+  .packages = c("MASS", "mikeutils", "dplyr"), 
+  .inorder = FALSE
+  ) %dopar% {
+  # n_events_i = 1
+  
+  set.seed(0)
+  
+  X <- generate_x(n_tr, n_cond, n_tr_per_cond, n_events_i)
+  
+  subjstats <- vector("list", length(snr))
+  groupmats <- vector("list", length(snr))
+  for (snr_i in seq_along(snr)) {
+    # snr_i = 1
+    
+    rsa_i <- vector("list", n_subj)
+    for (subj_i in seq_len(n_subj)) {
+  
+      B <- mvrnorm(n_vox, numeric(n_cond), Sigma = G)  ## generate
+      Y_1 <- generate_y(X, B, S_0.9 * snr[snr_i], n_rt, n_vox)
+      Y_2 <- generate_y(X, B, S_0.9 * snr[snr_i], n_rt, n_vox)
+  
+      fit_1 <- .lm.fit(X, Y_1)  ## estimate
+      fit_2 <- .lm.fit(X, Y_2)
+      rsa_i[[subj_i]] <- estimate_simil(fit_1, fit_2)
+  
+    }
+    
+    subjvecs <- wrangle_subjvecs(rsa_i)  ## half matrices (lower tris, for stats)
+    subjstats_i <- bind_rows(
+  
+      subjvecs %>%
+  
+        filter(type %in% c("vanil_corr_raw", "vanil_corr_prw")) %>%
+        group_by(subj, method, measure, normalization, type) %>%
+        summarize(
+          mean_ba = tanh(mean(atanh(value[cell == "ba"]))),
+          mean_t = tanh(mean(atanh(value[grep("t", cell)])))
+        ),
+  
+      subjvecs %>%
+  
+        filter(!type %in% c("vanil_corr_raw", "vanil_corr_prw")) %>%
+        group_by(subj, method, measure, normalization, type) %>%
+        summarize(
+          mean_ba = mean(value[cell == "ba"]),
+          mean_t = mean(value[grep("t", cell)])
+        )
+    )
+    
+    groupmats_i <- wrangle_groupmats(rsa_i)  ## full matrices (for plots)
+    
+    subjstats_i$snr <- snr[snr_i]
+    groupmats_i$snr <- snr[snr_i]
+    subjstats_i$n_events <- n_events_i
+    groupmats_i$n_events <- n_events_i
+    
+    subjstats[[snr_i]] <- subjstats_i
+    groupmats[[snr_i]] <- groupmats_i
+    
+    }
+  
+  subjstats <- bind_rows(subjstats)
+  groupmats <- bind_rows(groupmats)
+  
+  list(subjstats = subjstats, groupmats = groupmats)
+  
+}
+
+stopCluster(cl)
+
+
+## wrangle
+
+
+# nevents.used <- unlist(lapply(res_subjstats_grid_trialcounts, function(x) x$subjstats$n_events[1]))
+# names(groupmats_grid_snr) <- paste0("snr", snr.used)
+
+groupmats_grid_trialcounts <- res_subjstats_grid_trialcounts %>% 
+  lapply(function(x) x$groupmats) %>%
+  bind_rows
+
+subjstats_grid_trialcounts <- res_subjstats_grid_trialcounts %>% 
+  lapply(function(x) x$subjstats) %>%
+  bind_rows
+
+subjstats_grid_trialcounts %<>%
+  tidyr::pivot_longer(cols = c("mean_ba", "mean_t"), names_to = "cell_id", values_to = "value")
+
+```
+
+
+## parameters
+
+Consistent with similarity matrices, white indicates maximum (1), black indicates minimum (0).
+
+```{r sim_grid_trialcounts_parameters, fig.width = 11, fig.height = 6}
+# G_d %>%
+#   mutate(Var2 = factor(Var2, levels = rev(unique(Var2)))) %>%
+#   ggplot(aes(Var1, Var2, fill = value)) +
+#   geom_tile() +
+#   # scale_fill_viridis() +
+#   scale_fill_gradient(low = "black", high = "white") +
+#   theme(
+#     legend.position = "none",
+#     panel.grid = element_blank(), panel.background = element_blank(),
+#     axis.text.y = element_text(size = 15),
+#     axis.text.x = element_text(size = 15),
+#     axis.ticks = element_blank(), axis.title = element_blank()
+#     ) +
+#   scale_x_discrete(position = "top")
+# n_events <- seq(10, 100, 20)
+
+X_min <- generate_x(n_tr, n_cond, n_tr_per_cond, min(n_events))
+dimnames(X_min) <- list(tr = NULL, condition = letters[1:n_cond])
+X_min <- reshape2::melt(X_min)
+
+p_xmin <- X_min %>%
+  # mutate(condition = factor(Var2, levels = rev(unique(Var2)))) %>%
+  ggplot(aes(condition, tr, fill = value)) +
+  geom_tile() +
+  # scale_fill_viridis() +
+  scale_fill_gradient(low = "black", high = "white") +
+  theme(
+    legend.position = "none",
+    panel.grid = element_blank(), panel.background = element_blank(),
+    axis.text.y = element_text(size = 15),
+    axis.text.x = element_text(size = 15),
+    axis.ticks = element_blank()
+    ) +
+  scale_x_discrete(position = "top") +
+  scale_y_continuous(trans = "reverse") +
+  labs(title = paste0(min(n_events), " trials in condition 't'"))
+
+X_max <- generate_x(n_tr, n_cond, n_tr_per_cond, max(n_events))
+dimnames(X_max) <- list(tr = NULL, condition = letters[1:n_cond])
+X_max <- reshape2::melt(X_max)
+
+p_xmax <- X_max %>%
+  # mutate(condition = factor(Var2, levels = rev(unique(Var2)))) %>%
+  ggplot(aes(condition, tr, fill = value)) +
+  geom_tile() +
+  # scale_fill_viridis() +
+  scale_fill_gradient(low = "black", high = "white") +
+  theme(
+    legend.position = "none",
+    panel.grid = element_blank(), panel.background = element_blank(),
+    axis.text.y = element_text(size = 15),
+    axis.text.x = element_text(size = 15),
+    axis.ticks = element_blank()
+    ) +
+  scale_x_discrete(position = "top") +
+  scale_y_continuous(trans = "reverse") +
+  labs(title = paste0(max(n_events), " trials in condition 't'"))
+
+grid.arrange(
+  p_xmin, p_xmax, ncol = 2, top = textGrob("X matrices", gp = gpar(fontsize = 16, fontface = 2))
+)
+
+```
+
+* range of snrs tested: `r range(snr)`
+* range of number of TRs in condition *t* tested: `r range(n_events)`
+* number of TRs in other conditions: `r n_tr_per_cond`
+
+## results: similarity matrices
+
+Just an example from a single SNR and number of TRs:
+
+#### 1/SNR = 50, number of TRs in 't' = 50
+
+```{r sim_grid_trialcounts_mats, fig.width = 11, fig.height = 6}
+
+g <- groupmats_grid_trialcounts %>% filter(n_events, snr == 50, n_events == 50)
+
+grid.arrange(
+  
+  g %>% filter(type == "vanil_corr_raw") %>%  plot_matrix + labs(title = "correlation raw"),
+  g %>% filter(type == "vanil_eucl_raw") %>%  plot_matrix + labs(title = "euclidean raw"),
+  g %>% filter(type == "vanil_neuc_raw") %>%  plot_matrix + labs(title = "standardized euclidean raw"),
+  
+  g %>% filter(type == "vanil_corr_prw") %>%  plot_matrix + labs(title = "correlation white"),
+  g %>% filter(type == "vanil_eucl_prw") %>%  plot_matrix + labs(title = "euclidean white"),
+  g %>% filter(type == "vanil_neuc_prw") %>%  plot_matrix + labs(title = "standardized euclidean white"),
+  
+  ncol = 3,
+  
+  top = textGrob("vanilla RSA", gp = gpar(fontsize = 16, fontface = 2))
+  
+)
+
+grid.arrange(
+  
+  g %>% filter(type == "cross_corr_raw") %>%  plot_matrix + labs(title = "correlation raw"),
+  g %>% filter(type == "cross_eucl_raw") %>%  plot_matrix + labs(title = "euclidean raw"),
+  g %>% filter(type == "cross_neuc_raw") %>%  plot_matrix + labs(title = "standardized euclidean raw"),
+  
+  g %>% filter(type == "cross_corr_prw") %>%  plot_matrix + labs(title = "correlation white"),
+  g %>% filter(type == "cross_eucl_prw") %>%  plot_matrix + labs(title = "euclidean white"),
+  g %>% filter(type == "cross_neuc_prw") %>%  plot_matrix + labs(title = "standardized euclidean white"),
+  
+  ncol = 3,
+  
+  top = textGrob("cross-validated RSA", gp = gpar(fontsize = 16, fontface = 2))
+  
+)
+
+
+```
+
+### notes
+
+* the bias--variance tradeoff here is clear.
+
+* "vanilla" measures
+
+    * there are clear stripes corresponding to condition 't': high bias
+    * however, looking across the rest of the matrix, the cells are relatively evenly shaded: low variance
+
+* "cross-validated" measures
+
+  * the stripes of condition 't' dissappear: low bias
+  * however, there is much less smoothness in shade across the matrix: high variance
+
+* no free lunch
+
+
+## results: similarities (cell-wise means)
+
+For simplicity I only display prewhitened measures.
+
+### vanilla measures
+
+```{r sim_grid_trialcounts_plot_vanil, fig.width = 11, fig.height = 8}
+
+subjstats_grid_trialcounts %>%
+  
+  filter(method == "vanil", normalization == "prw") %>%
+  mutate(
+    snr = paste0("1/SNR: ", snr),
+    snr = factor(snr, levels = unique(snr))
+    ) %>%
+  
+  ggplot(aes(as.factor(n_events), value, color = cell_id, group = cell_id, alpha = cell_id)) +
+  stat_summary(fun.data = "mean_cl_boot") +
+  stat_summary(fun.y = mean, geom = "line", size = 1) +
+  
+  facet_wrap(
+    vars(measure, snr), scales = "free_y",
+    labeller = labeller(
+      measure = c(corr = "correlation", eucl = "euclidean", neuc = "standardized euclidean")
+      )
+    ) +
+
+  scale_color_manual(values = c(mean_ba = "black", mean_t = "firebrick"), labels = c("[a, b]", "[t, !t]"), name = "[row, col]") +
+  scale_alpha_manual(values = c(mean_ba = 0.25, mean_t = 1), labels = c("[a, b]", "[t, !t]"), name = "[row, col]") +
+  labs(y = "mean similarity", x = "number of TRs in trial type 't'", title = "vanilla RSA") +
+  theme(strip.background = element_blank(), strip.placement = "outside", strip.text = element_text(color = "grey20"))
+
+```
+
+#### notes
+
+* in high SNR scenarios (left panels), measurements are already close to their true values. I.e., correlation of trial types *a* and *b* are near 1; *t* and all other trial types (*!t*) are near 0.5.
+
+* thus, in high SNR, the number of trials in *t* has little impact on similarity measures.
+
+* because the 'true' correlation between *a* and *b* is 1, we can view the grey [*a*, *b*] line as the 'noise ceiling'.
+I.e., the highest correlation observable, given the SNR, and the number of trials in *a* and *b* (here, 10).
+
+* when decreasing SNR (moving right across panels), note that the y axis scale of the graphs decreases.
+I.e., with the correlation, the grey [*a*, *b*] line approaches zero. The noise ceiling is lowered.
+
+* In lower SNR scenarios, the magnitude (mean) of the measures become much more sensitive to the number of trials within each trial type.
+This is seen as the increasing red [*t*, *!t*] line across the graphs. (note however that the variances of these measures, indicated by the error bars, remains relatively stable across different trial counts.)
+
+* Eventually the observed [*t*, *!t*] similarity becomes greater than the [*a*, *b*] similarity, despite the true similarity being much less (e.g., r = 0.5 compared to r = 1). The key ingredients for this effect are:
+    * relatively **low SNR** (low upper-bound on similarities)
+    * a positive level of **"baseline" similarity**; i.e., trial types that are not predicted to be similar (because of theory) nevertheless evoke *somewhat* similar patterns (here, the baseline was r = 0.5)
+    * **differing numbers of trials** between conditions of interest.
+    
+* under equivalent SNR scenarios, euclidean's distance seems particularly sensitive to trial counts relative to correlation-like measures (correlation, standardized euclidean). not sure what to make of this, but interesting to note.
+
+### cross-validated measures
+
+```{r sim_grid_trialcounts_plot_cross, fig.width = 11, fig.height = 8}
+
+subjstats_grid_trialcounts %>%
+  
+  filter(method == "cross", normalization == "prw") %>%
+  mutate(
+    snr = paste0("1/SNR: ", snr),
+    snr = factor(snr, levels = unique(snr))
+    ) %>%
+  
+  ggplot(aes(as.factor(n_events), value, color = cell_id, group = cell_id, alpha = cell_id)) +
+  stat_summary(fun.data = "mean_cl_boot") +
+  stat_summary(fun.y = mean, geom = "line", size = 1) +
+  
+  facet_wrap(
+    vars(measure, snr), scales = "free_y",
+    labeller = labeller(
+      measure = c(corr = "correlation", eucl = "euclidean", neuc = "standardized euclidean")
+      )
+    ) +
+
+  scale_color_manual(values = c(mean_ba = "black", mean_t = "firebrick"), labels = c("[a, b]", "[t, !t]"), name = "[row, col]") +
+  scale_alpha_manual(values = c(mean_ba = 0.25, mean_t = 1), labels = c("[a, b]", "[t, !t]"), name = "[row, col]") +
+  labs(
+    y = "mean similarity", x = "number of TRs in trial type 't'", title = "cross-validated RSA"
+    ) +
+  theme(strip.background = element_blank(), strip.placement = "outside", strip.text = element_text(color = "grey20"))
+
+```
+
+
+#### notes
+
+* *note that the "cross-validated correlation" results here are not very interpretable: all cells with undefined correlations (as a result of variances $\leq 0$) were replaced with 0.* **focus instead on euclidean and standardized euclidean to interpret results**
+
+* the picture is different with cross-validated measures
+
+* first thing to note is that the SNR / number of trials does not impact the expected value of the similarity measure. For example, the 'noise ceiling' correlations ([*a*, *b*]) are roughly centered on zero (identical) in the euclidean distance and the standardized euclidean for all plots.
+
+* what number of trials *does* impact is the variances. this can be seen as increasing error bars from left to right across panels (with SNR decreasing), or as decreasing error bars of the red [*t*, *!t*] lines within each plot (with trial counts increasing).
+
+* also note that SNR impacts the *scale* of each plot. I.e., although identical patterns are centered at zero (grey line) across the board, patterns with r = 0.5 (red line) are located increasingly nearer to zero with decreasing SNR (red line approaches grey line from L to R panels). In other words, the only absolutely meaningful value in these measures is zero. the ratio of measures is defined by the SNR.
+    * this may be imprtant to note: different subjects, brain regions may have different levels of SNR. Thus, some form of rescaling may be warranted prior to group analysis or comparing across regions.
+
+
+# conclusions
+
+1. implementation of cross-validated mahalanobis (i.e., prewhitened euclidean) was validated
+
+2. confirmed that the expected value of cross-validated mahalanobis is insensitive to number of TRs in condition
+
+3. cross-validated correlation seems too unstable to be useful
+
+4. if an unbiased correlation-like measure is desired -- i.e., invariance to scale and mean -- then standardized cross-validated mahalanobis may be suitible
