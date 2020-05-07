@@ -54,7 +54,7 @@ Both of these are covariance matrices.
 
 **1. Estimate B via OLS**
 
-  - $\hat{\mathbf{B}} = (\mathbf{X}^T\mathbf{X})^{-1}\mathbf{X}\mathbf{Y}$
+  - $\hat{\mathbf{B}} = (\mathbf{X}^T\mathbf{X})^{-1}\mathbf{X}^T\mathbf{Y}$
 
 **2. Estimate G via RSA**
 
@@ -189,17 +189,21 @@ estimate_simil <- function(fit_1, fit_2) {
   
   cmat <- contrast_matrix(n_cond)
   
-  cross_eucl_raw <- colSums(t(cmat %*% Bhat_1) * t(Bhat_2) %*% t(cmat)) / n_vox  ## euclidean (squared)
-  cross_eucl_raw <- matrix(cross_eucl_raw, ncol = n_cond) / n_vox
+  ## euclidean (squared)
+  cross_eucl_raw <- colSums(t(cmat %*% Bhat_1) * t(Bhat_2) %*% t(cmat)) / n_vox
+  cross_eucl_raw <- matrix(cross_eucl_raw, ncol = n_cond)
   
-  cross_eucl_prw <- colSums(t(cmat %*% Bhat_1 %*% W2) * t(Bhat_2) %*% t(cmat)) / n_vox  ## (mahalanobis) (squared)
-  cross_eucl_prw <- matrix(cross_eucl_prw, ncol = n_cond) / n_vox
+  ## (mahalanobis) (squared)
+  cross_eucl_prw <- colSums(t(cmat %*% Bhat_1 %*% W2) * t(Bhat_2) %*% t(cmat)) / n_vox
+  cross_eucl_prw <- matrix(cross_eucl_prw, ncol = n_cond)
   
-  cross_neuc_raw <- colSums(t(cmat %*% scale(Bhat_1)) * t(scale(Bhat_2)) %*% t(cmat)) / n_vox  ## norm. euclidean (squared)
-  cross_neuc_raw <- matrix(cross_neuc_raw, ncol = n_cond) / n_vox
+  ## norm. euclidean (squared)
+  cross_neuc_raw <- colSums(t(cmat %*% scale(Bhat_1)) * t(scale(Bhat_2)) %*% t(cmat)) / n_vox
+  cross_neuc_raw <- matrix(cross_neuc_raw, ncol = n_cond)
   
-  cross_neuc_prw <- colSums(t(cmat %*% scale(Bhat_1) %*% W2) * t(scale(Bhat_2)) %*% t(cmat)) / n_vox  ## (norm. mahalanobis) (squared)
-  cross_neuc_prw <- matrix(cross_neuc_prw, ncol = n_cond) / n_vox
+  ## (norm. mahalanobis) (squared)
+  cross_neuc_prw <- colSums(t(cmat %*% scale(Bhat_1) %*% W2) * t(scale(Bhat_2)) %*% t(cmat)) / n_vox
+  cross_neuc_prw <- matrix(cross_neuc_prw, ncol = n_cond)
   
   ## return
   
@@ -407,7 +411,7 @@ G[G == 0] <- 0.5
 * to make correlation and euclidean distances more easily comparable, all euclidean distances were negated
 * The cross-validated correlation has the potential to be undefined (as result of negative square root, or zero, in denominator).
 In even small to moderate amounts of noise, the measure can become unstable (as was the case here).
-To run the same plots / stats on these cross-valdated correlations, I set all NaN values equal to zero.
+To run the same plots / stats on these cross-validated correlations, I set all NaN values equal to zero.
 This is obviously not ideal.
 For interpreting the simulation results, don't focus on cross-validated correlation.
 
@@ -837,7 +841,7 @@ groupstats_grid_snr %>%
 
 ### notes
 
-* prewhitening obviously increases sensivitivy across all noise thresholds
+* prewhitening obviously increases sensitivity across all noise thresholds
 * prewhitening works by primarily tempering noise variability rather than increasing the observed mean differences between similarity matrix cells (i.e., decreases denominator of t-test rather than numerator).
 * vanilla correlation and vanilla standardized euclidean look essentially identical (as expected)
 * cross-validated correlation highly unstable.
@@ -1075,7 +1079,7 @@ grid.arrange(
 
 ### notes
 
-* the bias--variance tradeoff here is clear.
+* the bias--variance trade-off here is clear.
 
 * "vanilla" measures
 
@@ -1084,7 +1088,7 @@ grid.arrange(
 
 * "cross-validated" measures
 
-  * the stripes of condition 't' dissappear: low bias
+  * the stripes of condition 't' disappear: low bias
   * however, there is much less smoothness in shade across the matrix: high variance
 
 * no free lunch
@@ -1190,7 +1194,7 @@ subjstats_grid_trialcounts %>%
 * what number of trials *does* impact is the variances. this can be seen as increasing error bars from left to right across panels (with SNR decreasing), or as decreasing error bars of the red [*t*, *!t*] lines within each plot (with trial counts increasing).
 
 * also note that SNR impacts the *scale* of each plot. I.e., although identical patterns are centered at zero (grey line) across the board, patterns with r = 0.5 (red line) are located increasingly nearer to zero with decreasing SNR (red line approaches grey line from L to R panels). In other words, the only absolutely meaningful value in these measures is zero. the ratio of measures is defined by the SNR.
-    * this may be imprtant to note: different subjects, brain regions may have different levels of SNR. Thus, some form of rescaling may be warranted prior to group analysis or comparing across regions.
+    * this may be important to note: different subjects, brain regions may have different levels of SNR. Thus, some form of rescaling may be warranted prior to group analysis or comparing across regions.
 
 
 # conclusions
@@ -1201,4 +1205,5 @@ subjstats_grid_trialcounts %>%
 
 3. cross-validated correlation seems too unstable to be useful
 
-4. if an unbiased correlation-like measure is desired -- i.e., invariance to scale and mean -- then standardized cross-validated mahalanobis may be suitible
+4. if an unbiased correlation-like measure is desired -- i.e., invariance to scale and mean -- then standardized cross-validated mahalanobis may be suitable
+
