@@ -1,0 +1,1060 @@
+---
+title: 'Comparing measures of pattern similarity using DMCC2 Stroop'
+author: "mike freund"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    highlight: zenburn
+---
+
+
+# About
+
+## Measures of similarity
+
+Analyses within this document consider several different measures of similarity---12 measures in all.
+I define these measures here.
+
+In short, I consider three __types of similarity__: _linear correlation_, _Euclidean distance_, and _scaled Euclidean distance_.
+For each type of similarity, I also consider two different __methods of estimation__: _between-run_ and via _cross-validation_.
+Finally, I consider two different __types of normalization__: _"raw" (unnormalized)_, and spatially _pre-whitened_ (or "multivariate noise-normalized").
+Thus, in all, I compare $3 * 2 * 2 = 12$ different measures of similarity.
+
+
+### notation
+  * $N_\text{vert}$: number of vertices in a given parcel.
+  * $\mathbf{x}_{r}$: a row vector of beta estimates from run $r$ and condition $x$ for a given subject and parcel.
+  This vector would contain $N_\text{vert}$ beta values, one for each vertex.
+    * e.g., $\mathbf{x}_{1}$ would indicate the betas from run $1$.
+  * $\mathbf{y}_{r}$: same as above, but for condition $y$
+  * $\bar{x}_{r}$: the across-vertex, i.e., __parcel-wise__ mean for run $r$ and condition $x$ (i.e.,  $\mathbf{x}_{r}\mathbf{1}/N_\text{vert}$)
+
+### linear correlation
+
+
+#### between-run correlation
+
+The Pearson correlation between two conditions ($x, y$) for scanning runs 1 and 2.
+
+
+\[r_\textit{btw}(x_1, y_2) = \frac
+{
+(\mathbf{x}_{1} - \bar{x}_{1})
+(\mathbf{y}_{2} - \bar{y}_{2})^T
+}
+{\sqrt{(\mathbf{x}_1 - \bar{x}_1)^2
+(\mathbf{y}_2 - \bar{y}_2)^{2}}}\]
+
+Or equivalently,
+
+\[r_\textit{btw}(x_1, y_2) = 
+\frac
+{\text{cov}(\mathbf{x}_1, \mathbf{y}_2)}
+{\sqrt{\text{var}({\mathbf{x}_1})\text{var}({\mathbf{y}_2})}}\]
+
+* In other words, Pearson's can be thought of as the covariance between conditions $x$ and $y$ between run 1 and 2, scaled by the square-rooted product of their variances (i.e., the product of their standard deviations).
+
+* The Pearson correlation is *biased*, as with increasing noise, it shrinks towards zero, away from the true (noise-free) value of the correlation.
+
+#### cross-validated correlation
+
+The cross-validated correlation between two conditions ($x, y$) for scanning runs 1 and 2.
+
+\[r_\textit{cv}(x_1, y_2) = 
+\frac
+{\text{cov}(\mathbf{x}_1, \mathbf{y}_2)}
+{\sqrt{\text{cov}({\mathbf{x}_1, \mathbf{x}_2})\text{cov}({\mathbf{y}_1, \mathbf{y}_2})}}\]
+
+* The cross-validated correlation does not scale the covariance by the product of the standard deviations. 
+Instead, it scales the covariance by the square-rooted product of the *cross-run covariances* within each condition.
+
+* Think of the within-condition cross-run covariance as an estimate of the pattern relaibility.
+Correlations between patterns with poor reliability will be *increased*.
+This is closely related to the **spearman-brown prophecy** formula.
+
+* The cross-validated correlation **is not a true correlation statistic**: it can range greater than 1 or -1, and can be undefined if the product of the cross-run covariances is negative (because of the square root).
+Depending on the SNR, this potential for undefined similarities will likely pose a problem for group-level analyses, as there may be substantial portions of data missing.
+
+* But, the upside to this measure is that it is *unbiased*: the expected value of this statistic (i.e., mean) is centered at the true value, regardless of the level of noise.
+
+* This means that the expected value of the cross-validated correlation **does not depend on the amount of data** (i.e., number of trials in each GLM regressor).
+In theory, this should allow us to compare different trial types *without downsampling / throwing out data*.
+
+* note also that *two* correlations are now generated per pair of conditions (i.e., the similarity matrix is not symmetric).
+This is because we can calculate $r_\textit{cv}(x_1, y_2)$ and $r_\textit{cv}(x_2, y_1)$.
+
+### euclidean distance
+
+#### between-run euclidean distance
+
+The Euclidean distance between two conditions ($x, y$) for scanning runs 1 and 2.
+
+\[d_\textit{btw}(x_1, y_2) = \sqrt{(\mathbf{x}_{1} - \mathbf{y}_{2})(\mathbf{x}_{1} - \mathbf{y}_{2})^T} / N_\text{vert}\]
+
+* In other words, the root-sum-of-squares of the difference between $x$ in run 1 and $y$ in run 2.
+
+* To state another way: __the difference vector $\mathbf{x}_1 - \mathbf{y}_2$ is multiplied to itself (dot product) then this scalar value is square-rooted.__
+This can be thought of as yielding the *length of the difference vector*, i.e., distance from origin.
+
+* NB: The formula above differs from the typical euclidean distance as I've divided by the number of dimensions, $N_{vert}$.
+The typical euclidean distance increases with increasing dimenisons, so this division maintains comparaibility across parcels.
+
+* This measure is also *biased*, as in the presence of noise, identical patterns would appear as distant (dissimilar).
+
+
+#### cross-validated (squared) euclidean distance
+
+The cross-validated (squared) Euclidean distance between two conditions ($x, y$) for scanning runs 1 and 2.
+
+\[d^2_\textit{cv}(x_1, y_2) = (\mathbf{x}_{1} - \mathbf{y}_{1})(\mathbf{x}_{2} - \mathbf{y}_{2})^T / N_\text{vert}\]
+
+* The cross-validated euclidean distance does not multiply the difference vector to itself.
+Instead, it calculates the difference vectors *separately in each run*, then multiplies them *across runs*.
+
+* The idea is that if there *is* a consistent difference between patterns, it should cross-validate across scanning runs (i.e., the dot product should be positive).
+But, if the difference is purely noise, then the dot product should be, on average, zero (no successful crossvaliation).
+
+* Thus, the cross-validated euclidean distance **is not a true distance metric**: it can range less than 0.
+Note that, because it can be negative, the square-root is not taken and the distance $d$ is left in squared units ($d^2$).
+
+* Like cross-validated correlation, this measure is also unbiased in the sense that the distance between indistinguishable patterns will have an expected value of zero.
+
+* note also that, in contrast to the cross-validated correlation, a *single* distance measure is generated per pair of conditions (assuming two runs). I.e., cross-validated euclidean distance matrices *are* symmetric.
+
+### scaled euclidean distance
+
+* the scaled euclidean distance is equivalent to the euclidean distances above (both between-run and cross-validated), except that, prior to caclulating the distances,
+the patterns are *z-score normalized* by subtracting the mean and dividing by the standard deviation of across-vertex betas.
+
+* this makes the (squared) euclidean distance more-or-less equivalent to linear correlation (a quick google search will show the exact form of the relation).
+
+* I computed scaled euclidean mostly as a sanity check.
+
+
+### pre-whitening
+
+Let $\mathbf{E}_r$ represent the matrix of residual timecourses for a given run $r$, parcel, and subject.
+I.e., $\mathbf{E}_1$ is of dimension $N_{\text{TRs}} \times N_{\text{vertices}}$ and corresponds to run 1.
+
+The vertex-by-vertex covariance matrix of $\mathbf{E}_1$ is given by $\mathbf{S}_1 = \mathbf{E}_1^T\mathbf{E}_1$.
+
+These covariance matrices give the spatial correlation structure of the noise within a given parcel for each run. 
+Each off-diagonal entry indicates the degree to which two vertices had residual time-courses that covaried during that run.
+
+To pre-whiten beta coefficients $\mathbf{x}_1$, these covariance matrices are
+
+  1. regularized by shrinking them towards an identity matrix by a factor $\lambda$, e.g.:
+
+  \[\mathbf{S}^\textit{(shrnk.)}_1 = \lambda \mathbf{I} + (1 - \lambda) \mathbf{S}_1\]
+
+  2. inverted: e.g.:
+
+  \[\mathbf{S}^{\textit{(shrnk.)}-1}_1\]
+
+  3. then averaged across runs and square-rooted
+
+  \[[(\mathbf{S}^{\textit{(shrnk.)}-1}_1 + \mathbf{S}^{\textit{(shrnk.)}-1}_2) / 2]^{1/2}\]
+  
+This forms the (regularized) __mahalanobis prewhitening matrix__, __W__, which is applied to each beta estimate:
+
+\[\mathbf{x}_1^{(\textit{prewhitened})} = \mathbf{x}_1\mathbf{W}\]
+
+* For these these analyses, I used a shrinkage factor of $\lambda = 0.4$ for all parcels and subjects.
+
+* Because I calculated cross-validated measures "by hand" (i.e., without using R's functions for euclidean distance and correlation),
+I omitted the (time-consuming) square-root step for these measures, and applied the squared whitening matrix,  $\mathbf{W}^2 = [(\mathbf{S}^{\textit{(shrnk.)}-1}_1 + \mathbf{S}^{\textit{(shrnk.)}-1}_2) / 2]$, directly to the patterns within the similarity calculation.
+For example:
+\[d^2_\textit{cv, prewhitened}(x_1, y_2) = (\mathbf{x}_{1} - \mathbf{y}_{1})
+\mathbf{W}^2
+(\mathbf{x}_{2} - \mathbf{y}_{2})^T / N_\text{vert}\]
+
+
+## Questions these analyses attempt to answer empirically
+
+
+### 1. How does pre-whitening impact the sensitivity of RSA measures?
+
+* effect sizes: the magnitude of the Stroop RSA contrast
+  * non-crossvalidated measures: mean(PC50-I ~ PC50-I) - mean(PC50-I ~ PC50-C)
+  * crossvalidated measures: PC50-I ~ PC50-C > 0 (euclidean distance) or PC50-I ~ PC50-C < 1 (correlation)
+
+* effect sizes: the variability in the Stroop RSA contrast between subjects
+
+* effect sizes: the test-statistic for Stroop RSA contrast (sum-of-signed ranks)
+
+* significance / coverage of cortex: the set of parcels identified as significant
+
+* convergent validity: correlation between subject's Stroop RSA contrast for PC50 items and Bias items
+  * test would rely upon having measures that do not depend on amount of data.
+
+* noise ceilings: inter-subject consistency in similarity matrices (representational geometry)
+
+### 2. Was cross-validation successful at removing dependency on amount of data?
+
+* Compare Bias-I ~ PC50-C and Bias-C ~ PC50-I between baseline and proactive
+* dependency on amt of data: interaction, such that Bias-I is positive in proactive, Bias-C positive in baseline.
+* no dependency would show as no interaction
+
+
+
+```{r setup, include = FALSE}
+
+knitr::opts_chunk$set(
+  cache = TRUE, echo = FALSE, warning = FALSE, message = FALSE,
+  fig.align = 'center',
+  fig.width = 11.5, fig.fullwidth = TRUE
+)
+
+set.seed(0)
+
+library(here)
+library(magrittr)
+library(dplyr)
+library(tidyr)
+library(data.table)
+library(mikeutils)
+library(lme4)
+library(lmerTest)
+library(ggplot2)
+library(ggbeeswarm)
+library(ggridges)
+library(viridis)
+library(grid)
+library(gridExtra)
+library(cowplot)
+library(cifti)
+library(gifti)
+library(abind)
+
+source(here("src", "setup.R"))
+
+
+## settings ----
+
+theme_set(theme_minimal(base_size = 14))
+
+
+## data ----
+
+## parcel-wise similarity matrices
+
+## vanilla RSA
+
+vanil <- 
+  abind(
+    abind(
+      readRDS(here("out", "rsa", "observed", "rmatrix_vanilla_corr_shaefer400_baseline_Congruency_EVENTS_censored.rds")),
+      readRDS(here("out", "rsa", "observed", "rmatrix_vanilla_eucl_shaefer400_baseline_Congruency_EVENTS_censored.rds")),
+      readRDS(here("out", "rsa", "observed", "rmatrix_vanilla_neuc_shaefer400_baseline_Congruency_EVENTS_censored.rds")),
+      rev.along = 0
+    ),
+    abind(
+      readRDS(here("out", "rsa", "observed", "rmatrix_vanilla_corr_shaefer400_proactive_Congruency_EVENTS_censored.rds")),
+      readRDS(here("out", "rsa", "observed", "rmatrix_vanilla_eucl_shaefer400_proactive_Congruency_EVENTS_censored.rds")),
+      readRDS(here("out", "rsa", "observed", "rmatrix_vanilla_neuc_shaefer400_proactive_Congruency_EVENTS_censored.rds")),
+      rev.along = 0
+    ),
+    rev.along = 0
+  )
+
+names(dimnames(vanil)) <- c(".row", ".col", "norma", "knot", "parcel", "subj", "measure", "session")
+dimnames(vanil)$measure <- c("corr", "eucl", "neuc")
+dimnames(vanil)$session <- c("baseline", "proactive")
+
+cross <- 
+  abind(
+    abind(
+      readRDS(here("out", "rsa", "observed", "rmatrix_crossva_corr_shaefer400_baseline_Congruency_EVENTS_censored.rds")),
+      readRDS(here("out", "rsa", "observed", "rmatrix_crossva_eucl_shaefer400_baseline_Congruency_EVENTS_censored.rds")),
+      readRDS(here("out", "rsa", "observed", "rmatrix_crossva_neuc_shaefer400_baseline_Congruency_EVENTS_censored.rds")),
+      rev.along = 0
+    ),
+    abind(
+        readRDS(here("out", "rsa", "observed", "rmatrix_crossva_corr_shaefer400_proactive_Congruency_EVENTS_censored.rds")),
+        readRDS(here("out", "rsa", "observed", "rmatrix_crossva_eucl_shaefer400_proactive_Congruency_EVENTS_censored.rds")),
+        readRDS(here("out", "rsa", "observed", "rmatrix_crossva_neuc_shaefer400_proactive_Congruency_EVENTS_censored.rds")),
+        rev.along = 0
+      ),
+    rev.along = 0
+  )
+
+names(dimnames(cross)) <- c(".row", ".col", "norma", "knot", "parcel", "subj", "measure", "session")
+dimnames(cross)$measure <- c("corr", "eucl", "neuc")
+dimnames(cross)$session <- c("baseline", "proactive")
+
+## filter subjs by those with data
+
+has.stats <- apply(vanil, "subj", function(.) !any(is.na(c(.))))
+subjs.with.stats <- names(has.stats)[has.stats]
+
+## TODO
+## these subjects do not have stats
+# setdiff(c(subjs.analysis, subjs.development), subjs.with.stats)
+## could be due to
+##  - no 3d+t gifti -> have RAs run
+##  - no beta gifti -> diagnose problem and fit
+
+subjs.analysis <- intersect(subjs.analysis, subjs.with.stats)
+subjs.development <- intersect(subjs.development, subjs.with.stats)
+subjs.bad <- intersect(subjs.bad, subjs.with.stats)
+
+vanil <- vanil[, , , , , subjs.analysis, , ]
+cross <- cross[, , , , , subjs.analysis, , ]
+
+## palettes ----
+
+colors.norma <- c(raw = "grey30", prw = "firebrick")
+# colors.glm <- c("2tr1knot" = "#d95f02", "1tr1knot" = "#1b9e77")
+colors.celltype <- c(I_I = "#e41a1c", C_C = "#377eb8", I_C = "#4daf4a")
+
+## transformations
+
+vanil[, , , , , , "corr", ] <- atanh(vanil[, , , , , , "corr", ])  ## fisher transform
+vanil[, , , , , , c("eucl", "neuc"), ] <- -vanil[, , , , , , c("eucl", "neuc"), ]  ## negate for interpretability
+cross[, , , , , , c("eucl", "neuc"), ] <- -cross[, , , , , , c("eucl", "neuc"), ]
+# cross.pro[, , , , , , c("eucl", "neuc")] <- -cross.pro[, , , , , , c("eucl", "neuc")]
+
+
+## extract target knot ----
+
+vanil <- vanil[, , , "knot2", , , , ]
+cross <- cross[, , , "knot2", , , , ]
+
+# cross <- cross[, , , c("knot3", "knot4"), , , ] %>% apply(c(".row", ".col", "norma", "parcel", "subj", "measure"), mean)
+# vanil <- vanil[, , , c("knot3", "knot4"), , , ] %>% apply(c(".row", ".col", "norma", "parcel", "subj", "measure"), mean)
+
+
+```
+
+
+# 1. Impact of prewhitening
+
+* baseline PC50 only
+
+* define function $\mathit{cell}(\text{rowname}, \text{colname})$: takes row and column names as input, returns value of cell
+
+* vanilla contrast: 
+
+\[
+\text{contrast}_\textit{vanilla} = 
+\mathit{cell}(\text{PC50InConRun1}, \text{PC50InConRun2}) -
+[\mathit{cell}(\text{PC50InConRun1}, \text{PC50ConRun2}) +
+  \mathit{cell}(\text{PC50InConRun2}, \text{PC50ConRun1})]/2
+\]
+
+This is tested against zero (over subjects): $\text{contrast}_\textit{vanilla} > 0$
+
+* cross-validated contrast:
+
+\[
+\text{contrast}_\textit{cross-validated} = \mathit{cell}(\text{PC50InCon}, \text{PC50Con})
+\]
+
+The invidiual cells themselves represent contrasts.
+
+These can be tested against zero (over subjects): $\text{contrast}_\textit{cross-validated} > 0$
+
+
+
+```{r prewhitening_wrangle}
+
+## vanilla measures ----
+
+inds.pc50.run1 <- grep("PC50.*_run1", conds.run)
+inds.pc50.run2 <- grep("PC50.*_run2", conds.run)
+
+vanil.pc50 <- 
+  
+  vanil[5:8, 1:4, , , , , "baseline"] %>%  ## btw run only
+
+  reshape2::melt(value.name = "simil") %>% 
+  
+  group_by(norma, parcel, subj) %>%   ## standardize within subjects
+  mutate(simil.sd = simil / sd(simil), method = "vanil")
+
+## get only pc50 and create celltype col
+
+vanil.pc50$.row <- gsub("_run.$", "", vanil.pc50$.row)
+vanil.pc50$.col <- gsub("_run.$", "", vanil.pc50$.col)
+
+vanil.pc50 <- vanil.pc50 %>% filter(grepl("PC50", .row), grepl("PC50", .col))
+
+vanil.pc50$celltype <- ifelse(
+  grepl("PC50InCon", vanil.pc50$.row) & grepl("PC50InCon", vanil.pc50$.col), "I_I",
+  ifelse(
+    grepl("PC50Con", vanil.pc50$.row) & grepl("PC50Con", vanil.pc50$.col), "C_C", "I_C"
+  )
+)
+
+vanil.pc50 <- vanil.pc50 %>%
+  
+  group_by(subj, parcel, celltype, norma, measure) %>%
+  summarize(simil = mean(simil), simil.sd = mean(simil.sd)) %>%  ## average within celltype
+  
+  group_by(subj, parcel, norma, measure) %>%  ## perform contrast
+  summarize(
+    simil = simil[celltype == "I_I"] - simil[celltype == "I_C"],
+    simil.sd = simil.sd[celltype == "I_I"] - simil.sd[celltype == "I_C"]
+    )
+
+## crossvalidated measures ----
+
+## standardize measures within subjects
+
+## correlation
+cross.corr <- cross[, , , , , "corr", "baseline"] %>% 
+  reshape2::melt(value.name = "simil") %>% 
+  mutate(method = "cross", measure = "corr")
+cross.corr <- cross.corr %>% group_by(norma, parcel, subj) %>% mutate(simil.sd = simil / sd(simil))
+
+## euclidean and normalized euclidean
+cross.eucls <- -cross[, , , , , c("eucl", "neuc"), "baseline"] %>%  ## un-negate (larger distance, more different!)
+  reshape2::melt(value.name = "simil") %>%
+  mutate(method = "cross")
+cross.eucls <- cross.eucls %>% group_by(norma, parcel, subj) %>% mutate(simil.sd = simil / sd(simil))
+
+## get pc50 only and bind
+
+cross.pc50 <- bind_rows(cross.corr, cross.eucls)
+cross.pc50 <- cross.pc50[cross.pc50$.row == "PC50InCon" & cross.pc50$.col == "PC50Con", ]
+
+## bind ----
+
+rsa.pc50 <- bind_rows(
+  vanil.pc50 %>% mutate(method = "vanil"),
+  cross.pc50 %>% select(-.row, -.col)
+)
+
+
+## take out trash ----
+
+rm(vanil.pc50, cross.corr, cross.eucls, cross.pc50)
+gc()
+
+
+## add factor cols ----
+
+## bind and add factor cols
+
+rsa.pc50$network <- ""  ## add networks
+for (network.i in networks) rsa.pc50$network[grepl(network.i, rsa.pc50$parcel)] <- network.i
+
+rsa.pc50$parcel.num <- match(rsa.pc50$parcel, parcellation$key)
+
+```
+
+## stats
+
+```{r prewhitening_mean_contrasts}
+
+rsa.pc50 %>%
+  
+  filter(parcel.num %in% dmcc34) %>%
+  group_by(subj, norma, measure, method) %>%
+  summarize(simil = mean(simil)) %>%
+  
+  ggplot(aes(norma, simil, fill = norma)) +
+  geom_hline(yintercept = 0) +
+  geom_line(aes(group = subj), alpha = 0.2) +
+  geom_boxplot(notch = TRUE, width = 0.25) +
+  
+  facet_wrap(vars(method, measure), scales = "free_y") +
+  
+  scale_fill_manual(values = colors.norma) +
+  
+  theme_light() +
+  theme(legend.position = "none")
+
+rsa.pc50 %>%
+  
+  filter(parcel.num %in% dmcc34) %>%
+  group_by(subj, norma, measure, method) %>%
+  summarize(simil.sd = mean(simil.sd)) %>%
+  
+  ggplot(aes(norma, simil.sd, fill = norma)) +
+  geom_hline(yintercept = 0) +
+  geom_line(aes(group = subj), alpha = 0.2) +
+  geom_boxplot(notch = TRUE, width = 0.25) +
+  
+  facet_wrap(vars(method, measure), scales = "free_y") +
+  
+  scale_fill_manual(values = colors.norma) +
+  
+  theme_light() +
+  theme(legend.position = "none")
+  
+# rsa.pc50 %>%
+#   
+#   filter(parcel.num %in% dmcc34) %>%
+#   group_by(norma, measure, method, subj) %>%
+#   summarize(simil = mean(simil)) %>%
+#   mutate(simil = simil / sd(simil)) %>%
+#   
+#   ggplot(aes(norma, simil, fill = norma)) +
+#   geom_hline(yintercept = 0) +
+#   geom_line(aes(group = subj), alpha = 0.2) +
+#   geom_boxplot(notch = TRUE, width = 0.25) +
+#   
+#   facet_wrap(vars(method, measure), scales = "free_y") +
+#   
+#   scale_fill_manual(values = colors.norma) +
+#   
+#   theme_light() +
+#   theme(legend.position = "none")
+
+
+rsa.pc50 %>%
+  
+  group_by(parcel, parcel.num, norma, measure, method, subj) %>%
+  summarize(simil = mean(simil.sd)) %>%
+  
+  summarize(
+    ssr = wilcox.test(simil, alternative = "greater")$statistic,
+    p.value = wilcox.test(simil, alternative = "greater")$p.value
+    ) %>%
+  group_by(parcel, parcel.num, measure, method) %>%
+  mutate(is.sig = any(p.value < 0.05), p.value = NULL) %>%
+  
+  pivot_wider(names_from = "norma", values_from = "ssr") %>%
+  
+  ggplot(aes(raw, prw, fill = parcel.num %in% dmcc34)) +
+  geom_abline() +
+  geom_hline(yintercept = 2) +
+  geom_vline(xintercept = 2) +
+  # geom_point(shape = 21, color = "white", size = 2) +
+  geom_point(aes(alpha = is.sig), shape = 21, color = "white", size = 2) +
+  
+  facet_grid(vars(method), vars(measure)) +
+  scale_fill_manual(values = c("TRUE" = "red", "FALSE" = "black")) +
+  scale_alpha_manual(values = c("TRUE" = 1, "FALSE" = 0.2)) +
+  
+  theme_light() +
+  theme(legend.position = "none")
+
+
+```
+
+
+
+```{r prewhitening_brains}
+
+onesamp <- rsa.pc50 %>%
+  group_by(parcel, norma, measure, method, network, parcel.num) %>%
+  summarize(
+    m = mean(simil.sd),
+    ssr = wilcox.test(simil.sd, alternative = "greater")$statistic,
+    p.value = wilcox.test(simil.sd, alternative = "greater")$p.value
+    ) %>%
+  group_by(norma, measure, method, network) %>%
+  mutate(p.fdr = p.adjust(p.value, method = "fdr"))
+
+paired <- rsa.pc50 %>%
+  group_by(parcel, norma, measure, method, network, parcel.num) %>%
+  mutate(simil.sd = simil.sd / sd(simil.sd)) %>%
+  select(-simil) %>%
+  pivot_wider(names_from = "norma", values_from = "simil.sd") %>%
+  summarize(
+    m = mean(prw) - mean(raw),
+    ssr = wilcox.test(prw, raw, paired = TRUE)$statistic,
+    p.value = wilcox.test(prw, raw, paired = TRUE)$p.value,
+    ) %>%
+  group_by(measure, method, network) %>%
+  mutate(p.fdr = p.adjust(p.value, method = "fdr"))
+
+# table(interaction(a$norma, a$measure, a$method), a$p.fdr < 0.05)
+
+## add cols for plotting
+
+onesamp %<>%
+  mutate(
+    hemi = substr(parcel, 1, 1),
+    num.roi = match(parcel, parcellation$key)
+    )
+
+paired %<>%
+  mutate(
+    hemi = substr(parcel, 1, 1),
+    num.roi = match(parcel, parcellation$key)
+    )
+
+```
+
+
+## brains
+
+* the t statistics from above are plotted on brains here.
+
+* thresholded at FDR-corrected whole-brain $\alpha = 0.05$
+
+### one-sample wilcox stats
+
+#### vanilla measures
+
+##### correlation, raw
+
+```{r, fig.height = 7, fig.width = 11}
+
+onesamp %>%
+  filter(method == "vanil", measure == "corr", norma == "raw") %>%
+  mutate(ssr = ifelse(p.fdr < 0.05, ssr, 0)) %>%
+  build_overlay("ssr", template = schaefer) %>%
+  plot_surface(underlay = hcp)
+
+```
+
+##### correlation, prewhitened
+
+```{r, fig.height = 7, fig.width = 11}
+
+onesamp %>%
+  filter(method == "vanil", measure == "corr", norma == "prw") %>%
+  mutate(ssr = ifelse(p.fdr < 0.05, ssr, 0)) %>%
+  build_overlay("ssr", template = schaefer) %>%
+  plot_surface(underlay = hcp)
+
+```
+
+##### euclidean, raw
+
+```{r, fig.height = 7, fig.width = 11}
+
+onesamp %>%
+  filter(method == "vanil", measure == "eucl", norma == "raw") %>%
+  mutate(ssr = ifelse(p.fdr < 0.05, ssr, 0)) %>%
+  build_overlay("ssr", template = schaefer) %>%
+  plot_surface(underlay = hcp)
+
+```
+
+##### euclidean, prewhitened
+
+```{r, fig.height = 7, fig.width = 11}
+
+onesamp %>%
+  filter(method == "vanil", measure == "eucl", norma == "prw") %>%
+  mutate(ssr = ifelse(p.fdr < 0.05, ssr, 0)) %>%
+  build_overlay("ssr", template = schaefer) %>%
+  plot_surface(underlay = hcp)
+
+```
+
+
+##### standardized euclidean, raw
+
+```{r, fig.height = 7, fig.width = 11}
+
+onesamp %>%
+  filter(method == "vanil", measure == "neuc", norma == "raw") %>%
+  mutate(ssr = ifelse(p.fdr < 0.05, ssr, 0)) %>%
+  build_overlay("ssr", template = schaefer) %>%
+  plot_surface(underlay = hcp)
+
+```
+
+##### standardized euclidean, prewhitened
+
+```{r, fig.height = 7, fig.width = 11}
+
+onesamp %>%
+  filter(method == "vanil", measure == "neuc", norma == "prw") %>%
+  mutate(ssr = ifelse(p.fdr < 0.05, ssr, 0)) %>%
+  build_overlay("ssr", template = schaefer) %>%
+  plot_surface(underlay = hcp)
+
+```
+
+#### cross-validated measures
+
+##### correlation, raw
+
+```{r, fig.height = 7, fig.width = 11}
+
+onesamp %>%
+  filter(method == "cross", measure == "corr", norma == "raw") %>%
+  mutate(ssr = ifelse(p.fdr < 0.05, ssr, 0)) %>%
+  build_overlay("ssr", template = schaefer) %>%
+  plot_surface(underlay = hcp)
+
+```
+
+##### correlation, prewhitened
+
+```{r, fig.height = 7, fig.width = 11}
+
+onesamp %>%
+  filter(method == "cross", measure == "corr", norma == "prw") %>%
+  mutate(ssr = ifelse(p.fdr < 0.05, ssr, 0)) %>%
+  build_overlay("ssr", template = schaefer) %>%
+  plot_surface(underlay = hcp)
+
+```
+
+##### euclidean, raw
+
+```{r, fig.height = 7, fig.width = 11}
+
+onesamp %>%
+  filter(method == "cross", measure == "eucl", norma == "raw") %>%
+  mutate(ssr = ifelse(p.fdr < 0.05, ssr, 0)) %>%
+  build_overlay("ssr", template = schaefer) %>%
+  plot_surface(underlay = hcp)
+
+```
+
+##### euclidean, prewhitened
+
+```{r, fig.height = 7, fig.width = 11}
+
+onesamp %>%
+  filter(method == "cross", measure == "eucl", norma == "prw") %>%
+  mutate(ssr = ifelse(p.fdr < 0.05, ssr, 0)) %>%
+  build_overlay("ssr", template = schaefer) %>%
+  plot_surface(underlay = hcp)
+
+```
+
+##### standardized euclidean, raw
+
+```{r, fig.height = 7, fig.width = 11}
+
+onesamp %>%
+  filter(method == "cross", measure == "neuc", norma == "raw") %>%
+  mutate(ssr = ifelse(p.fdr < 0.05, ssr, 0)) %>%
+  build_overlay("ssr", template = schaefer) %>%
+  plot_surface(underlay = hcp)
+
+```
+
+##### standardized euclidean, prewhitened
+
+```{r, fig.height = 7, fig.width = 11}
+
+onesamp %>%
+  filter(method == "cross", measure == "neuc", norma == "prw") %>%
+  mutate(ssr = ifelse(p.fdr < 0.05, ssr, 0)) %>%
+  build_overlay("ssr", template = schaefer) %>%
+  plot_surface(underlay = hcp)
+
+```
+
+
+### two-sample, paired wilcox stats
+
+* plotted: standardized mean difference between prewhitened and raw measures (prw - raw), within subject
+
+* thresholded at uncorrected p = 0.05
+
+#### vanilla measures
+
+##### correlation
+
+```{r, fig.height = 7, fig.width = 11}
+
+paired %>%
+  filter(method == "vanil", measure == "corr") %>%
+  mutate(m = ifelse(p.value < 0.05, m, 0)) %>%
+  build_overlay("m", template = schaefer) %>%
+  plot_surface(underlay = hcp)
+
+```
+
+##### euclidean
+
+```{r, fig.height = 7, fig.width = 11}
+
+paired %>%
+  filter(method == "vanil", measure == "eucl") %>%
+  mutate(m = ifelse(p.value < 0.05, m, 0)) %>%
+  build_overlay("m", template = schaefer) %>%
+  plot_surface(underlay = hcp)
+
+```
+
+##### standardized euclidean
+
+```{r, fig.height = 7, fig.width = 11}
+
+paired %>%
+  filter(method == "vanil", measure == "neuc") %>%
+  mutate(m = ifelse(p.value < 0.05, m, 0)) %>%
+  build_overlay("m", template = schaefer) %>%
+  plot_surface(underlay = hcp)
+
+```
+
+#### cross-validated measures
+
+##### correlation
+
+```{r, fig.height = 7, fig.width = 11}
+
+paired %>%
+  filter(method == "cross", measure == "corr") %>%
+  mutate(m = ifelse(p.value < 0.05, m, 0)) %>%
+  build_overlay("m", template = schaefer) %>%
+  plot_surface(underlay = hcp)
+
+```
+
+##### euclidean
+
+```{r, fig.height = 7, fig.width = 11}
+
+paired %>%
+  filter(method == "cross", measure == "eucl") %>%
+  mutate(m = ifelse(p.value < 0.05, m, 0)) %>%
+  build_overlay("m", template = schaefer) %>%
+  plot_surface(underlay = hcp)
+
+```
+
+##### standardized euclidean
+
+```{r, fig.height = 7, fig.width = 11}
+
+paired %>%
+  filter(method == "cross", measure == "neuc") %>%
+  mutate(m = ifelse(p.value < 0.05, m, 0)) %>%
+  build_overlay("m", template = schaefer) %>%
+  plot_surface(underlay = hcp)
+
+```
+
+
+# 2. Impact of cross-validation on sensitivity to number of trials
+
+### Mean (whole-brain) similarity matrices
+
+_cf._, the 'vanilla' matrices displayed in the __./rois_rsa_vanilla/.__ analyses
+
+```{r crossvalidated_matrices, fig.height = 10}
+
+allsim <- apply(cross, c(".row", ".col", "norma", "measure", "session"), mean)
+
+
+grid.arrange(
+  
+  allsim[, , "raw", "corr", "baseline"] %>% plot_matrix + labs(title = "correlation, bas"),
+  allsim[, , "raw", "corr", "proactive"] %>% plot_matrix + labs(title = "correlation, pro"),
+  
+  allsim[, , "raw", "eucl", "baseline"] %>% plot_matrix + labs(title = "euclidean, bas"),
+  allsim[, , "raw", "eucl", "proactive"] %>% plot_matrix + labs(title = "euclidean, pro"),
+  
+  allsim[, , "raw", "neuc", "baseline"] %>% plot_matrix + labs(title = "standardized euclidean, bas"),
+  allsim[, , "raw", "neuc", "proactive"] %>% plot_matrix + labs(title = "standardized euclidean, pro"),
+  
+  ncol = 2
+  
+)
+
+```
+
+
+**a rough analysis of sensitivity of measures to trial balancing**
+
+* focus on proactive data: not much going on in terms of observed stroop effects
+
+* BiasInCon in proactive has 54 trials per run
+
+* all other trial types (PC50Con, PC50InCon, biasCon), in proactive have 18 trials per run
+
+* If a measure is sensitive to trial counts, BiasInCon should correlate more strongly with all other patterns, regardless of pc / congruency.
+
+* Get average/sum of similarities of biasInCon and PC50InCon to congruent patterns:
+
+\[\text{biasInCon}\sim\text{allCon} = \mathit{simil}(\text{BiasInCon}, \text{PC50Con}) + \mathit{simil}(\text{BiasInCon}, \text{biasCon})\]
+\[\text{PC50InCon}\sim\text{allCon} = \mathit{simil}(\text{PC50InCon}, \text{PC50Con}) + \mathit{simil}(\text{PC50InCon}, \text{biasCon})\]
+
+    * these indicate the average *cross-congruency* similarity for biasInCon and PC50InCon
+    
+* contrast: $(\text{biasInCon}\sim\text{allCon}) - (\text{PC50InCon}\sim\text{allCon})$?
+    * will be positive if measure sensitive to number of trials.
+
+
+```{r crossvalidated_stats}
+
+## wrangle ----
+
+## vanilla measures
+
+vanil.d <- vanil[1:4, 5:8, "raw", , , , ] %>% reshape2::melt(value.name = "simil") %>% mutate(method = "vanil")
+
+vanil.d$.row <- gsub("_run.$", "", vanil.d$.row)
+vanil.d$.col <- gsub("_run.$", "", vanil.d$.col)
+
+vanil.d$pc <- ifelse(
+  grepl("PC50", vanil.d$.row) & grepl("PC50", vanil.d$.col), "pc50_pc50",
+  ifelse(
+    grepl("bias", vanil.d$.row) & grepl("bias", vanil.d$.col), "bias_bias",
+    "pc50_bias"
+  )
+)
+vanil.d$congruency <- ifelse(
+  grepl("InCon", vanil.d$.row) & grepl("InCon", vanil.d$.col), "I_I",
+  ifelse(
+    grepl("biasCon|PC50Con", vanil.d$.row) & grepl("biasCon|PC50Con", vanil.d$.col), "C_C",
+    "I_C"
+  )
+)
+
+vanil.d <- vanil.d %>% filter(congruency == "I_C")
+
+vanil.d$condition <- ifelse(
+    grepl("biasInCon", vanil.d$.row) | grepl("biasInCon", vanil.d$.col), "biasI_C",
+    ifelse(
+      grepl("PC50InCon", vanil.d$.row) | grepl("PC50InCon", vanil.d$.col), "pc50I_C", NA
+    )
+)
+
+# sum(is.na(vanil.d$condition))
+
+vanil.d <- vanil.d %>%
+  group_by(parcel, subj, measure, session, method, condition) %>%
+  summarize(simil = mean(simil))  ## summarize by condiiton
+
+
+## cross-validated measures
+
+cross.d <- cross[, , "raw", , , , ] %>% reshape2::melt(value.name = "simil") %>% mutate(method = "cross")
+
+cross.d$pc <- ifelse(
+  grepl("PC50", cross.d$.row) & grepl("PC50", cross.d$.col), "pc50_pc50",
+  ifelse(
+    grepl("bias", cross.d$.row) & grepl("bias", cross.d$.col), "bias_bias",
+    "pc50_bias"
+  )
+)
+cross.d$congruency <- ifelse(
+  grepl("InCon", cross.d$.row) & grepl("InCon", cross.d$.col), "I_I",
+  ifelse(
+    grepl("biasCon|PC50Con", cross.d$.row) & grepl("biasCon|PC50Con", cross.d$.col), "C_C",
+    "I_C"
+  )
+)
+
+cross.d <- cross.d %>% filter(congruency == "I_C")
+
+cross.d$condition <- ifelse(
+    grepl("biasInCon", cross.d$.row) | grepl("biasInCon", cross.d$.col), "biasI_C",
+    ifelse(
+      grepl("PC50InCon", cross.d$.row) | grepl("PC50InCon", cross.d$.col), "pc50I_C", NA
+    )
+)
+
+# sum(is.na(cross.d$condition))
+
+cross.d <- cross.d %>%
+  group_by(parcel, subj, measure, session, method, condition) %>%
+  summarize(simil = mean(simil))  ## summarize by condiiton
+
+## bind
+
+d <- bind_rows(cross.d, vanil.d)
+
+## stats
+
+d.stats <- d %>%
+  
+  .[.$session == 'proactive', ] %>%
+  
+  pivot_wider(names_from = "condition", values_from = "simil") %>%
+  group_by(parcel, measure, method) %>%
+  summarize(
+    statistic = t.test(biasI_C, pc50I_C, paired = TRUE)$statistic,
+    p.value = t.test(biasI_C, pc50I_C, paired = TRUE)$p.value
+    ) %>%
+  group_by(measure, method) %>%
+  mutate(p.fdr = p.adjust(p.value, method = "fdr"))
+
+
+```
+
+
+
+```{r crossvalidated_plots}
+
+d %>%
+  
+  .[.$session == 'proactive', ] %>%
+  
+  group_by(subj, measure, session, condition, method) %>%
+  summarize(simil = mean(simil)) %>%
+  pivot_wider(names_from = "condition", values_from = "simil") %>%
+  
+  ggplot(aes(biasI_C, pc50I_C)) +
+  geom_abline() +
+  geom_point(shape = 21, fill = "black", color = "grey50", size = 2) +
+  
+  facet_wrap(vars(method, measure), scales = "free") +
+  labs(
+    title = "cross-congruency similarities per subject (aggregated across all parcels, proactive)",
+    x = "biasInCon~allCon",
+    y = "PC50InCon~allCon",
+    caption = "line is unity"
+    )
+
+
+# d.stats %>%
+#   
+#   ggplot(aes(method, statistic)) +
+#   geom_boxplot(aes(fill = measure), position = position_dodge())
+
+d.stats %>%
+  
+  select(-p.value, -p.fdr) %>%
+  pivot_wider(names_from = "method", values_from = "statistic") %>%
+  
+  ggplot(aes(cross, vanil)) +
+  geom_abline() +
+  geom_point(aes(color = match(parcel, parcellation$key) %in% dmcc34)) +
+  geom_point(
+    data = . %>% group_by(measure) %>% summarize(cross = mean(cross), vanil = mean(vanil)),
+    size = 5 
+  ) +
+  
+  facet_wrap(vars(measure), scales = "free") +
+  
+  scale_color_manual(values = c("TRUE" = "red", "FALSE" = "grey50"), name = "in dmcc34") +
+
+  labs(
+    title = "cross-congruency similarity CONTRAST per parcel (paired sample t-test over subjects, proactive)",
+    x = "cross-validated methods",
+    y = "vanilla methods",
+    caption = "line is unity\n black dot is centroid"
+    )
+
+```
+
+Cross-congruency similarity contrast, table of parcel counts with significant effect ("TRUE"; uncorrected):
+
+```{r echo = TRUE}
+
+with(d.stats, table(interaction(measure, method), p.value < 0.05))
+
+# parcels.eucl <- d.stats %>% filter(p.value < 0.05, measure == "eucl", method == "cross") %>% pull(parcel)
+# parcels.corr <- d.stats %>% filter(p.value < 0.05, measure == "corr", method == "cross") %>% pull(parcel)
+# parcels.neuc <- d.stats %>% filter(p.value < 0.05, measure == "neuc", method == "cross") %>% pull(parcel)
+# 
+# setdiff(parcels.eucl, parcels.corr)
+# intersect(parcels.neuc, parcels.corr)
+# setdiff(parcels.neuc, parcels.corr)
+# setdiff(parcels.corr, parcels.neuc)
+
+```
+
+
+# 3. Extended analyses of prewhitening on cross-validated measures
+
+## (a) between-subject correlations with alternative measures
+
+### stroop effects (I--C discriminability) across item types (pc50, bias)
+
+### association with RT
+
+* averaged across DMCC34
+
+## (b) noise ceilings
+
+* dmcc34
+

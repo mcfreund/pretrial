@@ -1,0 +1,1175 @@
+---
+title: 'Defining ROIs: vanilla RSA'
+author: "mike freund"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    highlight: zenburn
+---
+
+```{r setup, include = FALSE}
+
+
+knitr::opts_chunk$set(
+  cache = TRUE, echo = FALSE, warning = FALSE, message = FALSE,
+  fig.align = 'center',
+  fig.width = 11.5, fig.fullwidth = TRUE,
+  cache.path = paste0(measure.i, "/cache/"),
+  fig.path = paste0(measure.i, "/figs/")
+)
+
+set.seed(0)
+
+library(here)
+library(magrittr)
+library(dplyr)
+library(tidyr)
+library(data.table)
+library(mikeutils)
+library(lme4)
+library(lmerTest)
+library(ggplot2)
+library(ggbeeswarm)
+library(ggridges)
+library(viridis)
+library(grid)
+library(gridExtra)
+library(cowplot)
+library(cifti)
+library(gifti)
+library(abind)
+
+source(here("src", "setup.R"))
+
+## settings ----
+
+theme_set(theme_minimal(base_size = 14))
+
+## functions ----
+
+plot_matrix <- function(d) {
+  
+  if (is.matrix(d)) d <- reshape2::melt(d)
+  
+  d %>%
+    mutate(.col = factor(.col, levels = rev(unique(.col)))) %>%
+    ggplot(aes(.row, .col, fill = value)) +
+    geom_tile() +
+    # scale_fill_viridis() +
+    scale_fill_gradient(low = "black", high = "white") +
+    theme(
+      # legend.position = "none", 
+      panel.grid = element_blank(), 
+      # panel.background = element_blank(),
+      axis.text.x = element_blank(),
+      # axis.ticks = element_blank(), 
+      axis.title = element_blank()
+      )
+
+}
+
+tidy_lmer <- function(x) {
+  coefs <- as.data.frame(coef(summary(x)))
+  coefs$term <- rownames(coefs)
+  dplyr::rename(coefs, estimate = "Estimate", se = "Std. Error", "statistic" = "t value", p.value = "Pr(>|t|)")
+}
+
+## data ----
+
+## parcel-wise similarity matrices
+
+vanil.2tr1knot <- abind(
+  readRDS(
+    here(
+      "out", "rsa", "observed", 
+      paste0("rmatrix_vanilla_", measure.i, "_shaefer400_baseline_Congruency_EVENTS_censored.rds")
+      )
+    ),
+  readRDS(
+    here(
+      "out", "rsa", "observed", 
+      paste0("rmatrix_vanilla_", measure.i, "_shaefer400_proactive_Congruency_EVENTS_censored.rds")
+      )
+    ),
+  rev.along = 0
+)
+
+names(dimnames(vanil.2tr1knot)) <- c(".row", ".col", "norma", "knot", "parcel", "subj", "session")
+dimnames(vanil.2tr1knot)$session <- c("baseline", "proactive")
+
+vanil.1tr1knot <- abind(
+  readRDS(
+    here(
+      "out", "rsa", "observed", 
+      paste0("rmatrix_vanilla_", measure.i, "_shaefer400_baseline_Congruency_EVENTS_tentzero01210_censored.rds")
+      )
+    ),
+  readRDS(
+    here(
+      "out", "rsa", "observed",
+      paste0("rmatrix_vanilla_", measure.i, "_shaefer400_proactive_Congruency_EVENTS_tentzero01210_censored.rds"))
+    ),
+  rev.along = 0
+)
+
+names(dimnames(vanil.1tr1knot)) <- c(".row", ".col", "norma", "knot", "parcel", "subj", "session")
+dimnames(vanil.1tr1knot)$session <- c("baseline", "proactive")
+
+
+## variables ----
+
+dmcc34 <- c(
+  22, 77, 78, 86, 87, 91, 93, 99, 101, 103, 105, 107, 110, 127, 130, 139, 140,
+  144, 148, 172, 175, 185, 189, 219, 301, 303, 306, 314, 340, 346, 347, 349, 350, 353
+)
+
+## filter subjs by those with data
+
+has.stats.2tr1knot <- apply(vanil.2tr1knot, "subj", function(.) !any(is.na(c(.))))
+has.stats.1tr1knot <- apply(vanil.1tr1knot, "subj", function(.) !any(is.na(c(.))))
+has.stats <- has.stats.2tr1knot & has.stats.1tr1knot
+subjs.with.stats <- names(has.stats)[has.stats]
+
+## TODO
+## these subjects do not have stats
+# setdiff(c(subjs.analysis, subjs.development), subjs.with.stats)
+## could be due to
+##  - no 3d+t gifti -> have RAs run
+##  - no beta gifti -> diagnose problem and fit
+
+subjs.analysis <- intersect(subjs.analysis, subjs.with.stats)
+subjs.development <- intersect(subjs.development, subjs.with.stats)
+subjs.bad <- intersect(subjs.bad, subjs.with.stats)
+
+
+## subset data ----
+
+vanil.2tr1knot <- vanil.2tr1knot[, , , , , subjs.analysis, ]
+vanil.1tr1knot <- vanil.1tr1knot[, , , , , subjs.analysis, ]
+
+## atlases ----
+
+hcp <- list(
+  L  = readGIfTI(
+    file.path(dir.atlas, "surf", "HCP_S1200_GroupAvg_v1", "S1200.L.midthickness_MSMAll.32k_fs_LR.surf.gii")
+  ),
+  R = readGIfTI(
+    file.path(dir.atlas, "surf", "HCP_S1200_GroupAvg_v1", "S1200.R.midthickness_MSMAll.32k_fs_LR.surf.gii")
+  )
+)
+
+over <- list(
+  L = parcellation$atlas[1:(nrow(parcellation$atlas) / 2)], 
+  R = parcellation$atlas[(nrow(parcellation$atlas) / 2):nrow(parcellation$atlas)]
+)
+
+schaefer <- list(
+  L = read_gifti2matrix(
+    file.path(dir.schaefer, "Schaefer2018_400Parcels_7Networks_order_L.label.gii")
+    ) %>% c,
+  R = read_gifti2matrix(
+    file.path(dir.schaefer, "Schaefer2018_400Parcels_7Networks_order_R.label.gii")
+    ) %>% c
+)
+
+## palettes ----
+
+colors.glm <- c("2tr1knot" = "#d95f02", "1tr1knot" = "#1b9e77")
+colors.celltype <- c(I_I = "#e41a1c", C_C = "#377eb8", I_C = "#4daf4a")
+
+## wrangle ----
+
+inds.pc50.run1 <- grep("PC50.*_run1", conds.run)
+inds.pc50.run2 <- grep("PC50.*_run2", conds.run)
+vanil.1tr1knot.pc50 <- vanil.1tr1knot[inds.pc50.run2, inds.pc50.run1, , , , , ]
+vanil.2tr1knot.pc50 <- vanil.2tr1knot[inds.pc50.run2, inds.pc50.run1, , , , , ]
+
+## transformations
+
+if (measure.i == "corr") {
+  
+  ## fisher transform correlations
+  
+  vanil.1tr1knot.pc50 <- atanh(vanil.1tr1knot.pc50)  ## r to z
+  vanil.2tr1knot.pc50 <- atanh(vanil.2tr1knot.pc50)
+
+} else if (measure.i %in% c("eucl", "neuc")) {
+
+  ## negate (for comparison to correlation)
+
+  vanil.1tr1knot.pc50 <- -vanil.1tr1knot.pc50
+  vanil.2tr1knot.pc50 <- -vanil.2tr1knot.pc50
+  
+}
+
+## unwrap to lower triangle vectors
+
+vanil.1tr1knot.pc50.d <- reshape2::melt(vanil.1tr1knot.pc50, value.name = "simil", na.rm = TRUE) %>% 
+  mutate(glm = "1tr1knot")
+vanil.2tr1knot.pc50.d <- reshape2::melt(vanil.2tr1knot.pc50, value.name = "simil", na.rm = TRUE) %>% 
+  mutate(glm = "2tr1knot")
+
+## bind and add factor cols
+
+vanil.2tr1knot.pc50.d$tr <- as.numeric(gsub("knot", "", vanil.2tr1knot.pc50.d$knot)) * 2  ## knots to TRs
+vanil.1tr1knot.pc50.d$tr <- as.numeric(gsub("knot", "", vanil.1tr1knot.pc50.d$knot))
+vanil.pc50 <- bind_rows(vanil.1tr1knot.pc50.d, vanil.2tr1knot.pc50.d)  ## bind different glms
+
+vanil.pc50$network <- ""  ## add networks
+for (network.i in networks) vanil.pc50$network[grepl(network.i, vanil.pc50$parcel)] <- network.i
+
+vanil.pc50$celltype <- ifelse(
+  grepl("PC50InCon", vanil.pc50$.row) & grepl("PC50InCon", vanil.pc50$.col), "I_I",
+  ifelse(
+    grepl("PC50Con", vanil.pc50$.row) & grepl("PC50Con", vanil.pc50$.col), "C_C", "I_C"
+  )
+)
+
+vanil.pc50 %<>% mutate(parcel.num = match(parcel, parcellation$key))
+
+## take out trash
+
+rm(
+  vanil.1tr1knot.pc50, vanil.1tr1knot.pc50.d,
+  vanil.2tr1knot.pc50, vanil.2tr1knot.pc50.d
+  )
+
+gc()
+
+vanil.pc50 %<>% filter(norma == "raw") %>% select(-norma)  ## raw values only (not prewhitened)
+
+
+## stats ----
+
+vanil.pc50.parcel.contrast <- vanil.pc50 %>%
+  
+  group_by(session, network, tr, subj, parcel, celltype, glm, parcel.num) %>%
+  summarize(simil = mean(simil)) %>%  ## average within celltype
+  
+  pivot_wider(names_from = "celltype", values_from = "simil") %>%  ## get contrast
+  mutate(simil.contrast = I_I - I_C)
+
+vanil.pc50.dmcc34 <- vanil.pc50 %>% filter(parcel.num %in% dmcc34)
+
+```
+
+
+# about
+
+1. A cursory vanilla RSA on baseline and proactive data, PC50 items.
+2. Identify a set of ROIs via RSA, separately in baseline and proactive, that respond to incongruency status.
+
+* __subjs__:
+
+* __similarity measures__:
+
+* __glms__:
+
+* __sessions__:
+
+* __conditons / trial types__:
+
+
+
+# data at a glance
+
+
+```{r distributions, fig.height = 7}
+
+## https://cran.r-project.org/web/packages/ggridges/vignettes/introduction.html
+
+grid.arrange(
+  
+  vanil.pc50 %>%
+    
+    ggplot(aes(simil, y = network, fill = network, height = stat(density))) +
+    geom_density_ridges(stat = "density", alpha = 0.8, rel_min_height = 0.01) +
+    
+    facet_grid(vars(session, glm)) +
+    scale_color_brewer(type = "qual") +
+    theme_minimal() +
+    theme(axis.text.y = element_text(vjust = 0), legend.position = "none"),
+  
+  vanil.pc50 %>%
+    
+    ggplot(aes(network, simil, fill = network)) +
+    geom_boxplot(width = 0.25, outlier.alpha = 0.5, outlier.size = 0.5) +
+    
+    facet_grid(vars(session, glm)) +
+    scale_color_brewer(type = "qual") +
+    theme_minimal() +
+    theme(legend.position = "none"),
+  
+  ncol = 2
+  
+)
+
+```
+
+__Mean (whole-brain) similarity matrices (2tr1knot only):__
+
+```{r matrices, fig.height = 10}
+
+allsim.2tr1knot.bas <- tanh(apply(atanh(vanil.2tr1knot[, , "raw", , , , "baseline"]), c(".row", ".col"), mean))
+allsim.2tr1knot.pro <- tanh(apply(atanh(vanil.2tr1knot[, , "raw", , , , "proactive"]), c(".row", ".col"), mean))
+
+grid.arrange(
+  
+  plot_matrix(allsim.2tr1knot.bas) + labs(title = "baseline"),
+  plot_matrix(allsim.2tr1knot.pro) + labs(title = "proactive"),
+  
+  plot_matrix(allsim.2tr1knot.bas[1:4, 5:8]) + labs(title = "baseline, between-run"),
+  plot_matrix(allsim.2tr1knot.pro[1:4, 5:8]) + labs(title = "proactive, between-run"),
+  
+  plot_matrix(allsim.2tr1knot.bas[inds.pc50.run1, inds.pc50.run2]) + 
+    labs(title = "baseline, between-run PC50") + theme(axis.text.x = element_text()),
+  plot_matrix(allsim.2tr1knot.pro[inds.pc50.run1, inds.pc50.run2]) + 
+    labs(title = "proactive, between-run PC50") + theme(axis.text.x = element_text()),
+
+  ncol = 2
+  
+)
+
+```
+
+__Here I will focus only on the BETWEEN-RUN PC50 cells.__
+
+
+# event-related curves
+
+## all parcels
+
+### by network
+
+__aggregated across parcels within network__
+
+```{r curves_networ, fig.height = 12}
+
+## z values, by network
+
+vanil.pc50 %>%
+  
+  group_by(session, network, tr, subj, celltype, glm) %>%
+  summarize(simil = mean(simil)) %>%  ## average across parcels
+  
+  ggplot(aes(tr, simil, fill = celltype, color = celltype)) +
+  geom_hline(yintercept = 0) +
+  stat_summary(fun.data = "mean_cl_boot", geom = "ribbon", alpha = 0.25) +
+  stat_summary(fun.y = "mean", geom = "line", size = 1) +
+  
+  facet_grid(vars(network), vars(session, glm)) +
+  
+  scale_fill_manual(values = colors.celltype) +
+  scale_color_manual(values = colors.celltype) +
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "bottom") +
+  labs(
+    title = "pairwise similarities over target epoch", 
+    y = "similarity", 
+    caption = "bands: bootstrapped 95% CI of across-subject mean"
+    )
+
+## contrast, by network
+
+vanil.pc50 %>%
+  
+  group_by(session, network, tr, subj, celltype, glm) %>%
+  summarize(simil = mean(simil)) %>%  ## average across parcels
+  
+  pivot_wider(names_from = "celltype", values_from = "simil") %>%  ## get contrast
+  mutate(simil.contrast = I_I - I_C) %>%
+  
+  
+  ggplot(aes(tr, simil.contrast, color = glm, fill = glm)) +
+  geom_hline(yintercept = 0) +
+  stat_summary(fun.data = "mean_cl_boot", geom = "ribbon", alpha = 0.25) +
+  stat_summary(fun.y = "mean", geom = "line", size = 1) +
+  
+  facet_grid(vars(network), vars(session)) +
+  
+  scale_fill_manual(values = colors.glm) +
+  scale_color_manual(values = colors.glm) +
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "bottom") +
+  labs(
+    title = "similarity contrast over target epoch", 
+    y = "I-I versus I-C similarity", 
+    caption = "bands: bootstrapped 95% CI of across-subject mean"
+    )
+
+## t stat, by network
+
+vanil.pc50 %>%
+  
+  group_by(session, network, tr, celltype, glm, subj) %>%
+  summarize(simil = mean(simil)) %>%  ## average across parcels
+  
+  pivot_wider(names_from = "celltype", values_from = "simil") %>%  ## get contrast
+  mutate(simil.contrast = I_I - I_C) %>%
+  
+  summarize(t.stat = t.test(simil.contrast, alternative = "greater")$statistic) %>%
+  
+  
+  ggplot(aes(tr, t.stat, color = glm)) +
+  geom_hline(yintercept = 0) +
+  geom_hline(yintercept = 2, linetype = "dashed", color = "grey50") +
+  geom_line(size = 2) +
+  
+  facet_grid(vars(network), vars(session)) +
+  
+  scale_color_manual(values = colors.glm) +
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "none") +
+  labs(
+    title = "similarity contrast over target epoch", 
+    y = "t statistic",
+    caption = "dashed line at t = 2"
+  )
+
+
+```
+
+
+### by parcel
+
+__aggregated across subjects__
+
+#### 2tr1knot
+
+```{r curves_parcel_2tr1knot, fig.height = 12}
+
+## z values, by parcel
+
+vanil.pc50 %>%
+  
+  filter(glm == "2tr1knot") %>%
+  
+  group_by(session, network, tr, celltype, parcel) %>%
+  summarize(simil = mean(simil)) %>%  ## average across subjects
+  
+  ggplot(aes(tr, simil, fill = celltype, color = celltype)) +
+  geom_hline(yintercept = 0) +
+  geom_line(aes(group = parcel), size = 1, alpha = 0.5) +
+  
+  facet_grid(vars(network), vars(session, celltype)) +
+  
+  scale_fill_manual(values = colors.celltype) +
+  scale_color_manual(values = colors.celltype) +
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "bottom") +
+  labs(
+    title = "pairwise similarities over target epoch per parcel | 2tr1knot", 
+    y = "similarity"
+    )
+
+
+## contrast, by parcel
+
+vanil.pc50.parcel.contrast %>% 
+  
+  filter(glm == "2tr1knot") %>%
+  
+  group_by(session, network, tr, parcel) %>%
+  summarize(simil.contrast = mean(simil.contrast))  %>% ## average across subjects
+  
+  ggplot(aes(tr, simil.contrast)) +
+  geom_hline(yintercept = 0) +
+  geom_line(aes(group = parcel), size = 1, alpha = 0.25) +
+  
+  facet_grid(vars(network), vars(session)) +
+  
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "bottom") +
+  labs(
+    title = "similarity contrast over target epoch per parcel | 2tr1knot", 
+    y = "I-I versus I-C similarity"
+    )
+
+## t stat, by network
+
+vanil.pc50.parcel.contrast %>%
+  
+  filter(glm == "2tr1knot") %>%
+  
+  group_by(session, network, tr, parcel) %>%
+  summarize(t.stat = t.test(simil.contrast, alternative = "greater")$statistic) %>%
+  
+  group_by(session, network, parcel) %>%
+  mutate(is.sig = ifelse(any(t.stat > 3), TRUE, FALSE)) %>%
+  
+  ggplot(aes(tr, t.stat)) +
+  geom_hline(yintercept = 0) +
+  geom_hline(yintercept = 2, linetype = "dashed", color = "grey50") +
+  geom_line(aes(group = parcel, alpha = is.sig), size = 1) +
+  
+  facet_grid(vars(network), vars(session)) +
+  
+  scale_alpha_manual(values = c("TRUE" = 0.9, "FALSE" = 0.2)) +
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "none") +
+  labs(
+    title = "similarity contrast over target epoch per parcel | 2tr1knot", 
+    y = "t statistic",
+    caption = "dark lines are parcels with any TR with t > 3"
+  )
+
+
+```
+
+#### 1tr1knot
+
+```{r curves_parcel_1tr1knot, fig.height = 12}
+
+## z values, by parcel
+
+vanil.pc50 %>%
+  
+  filter(glm == "1tr1knot") %>%
+  
+  group_by(session, network, tr, celltype, parcel) %>%
+  summarize(simil = mean(simil)) %>%  ## average across subjects
+  
+  ggplot(aes(tr, simil, fill = celltype, color = celltype)) +
+  geom_hline(yintercept = 0) +
+  geom_line(aes(group = parcel), size = 1, alpha = 0.5) +
+  
+  facet_grid(vars(network), vars(session, celltype)) +
+  
+  scale_fill_manual(values = colors.celltype) +
+  scale_color_manual(values = colors.celltype) +
+  scale_x_continuous(breaks = seq(0, 12, 4)) +
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "bottom") +
+  labs(
+    title = "pairwise similarities over target epoch per parcel | 1tr1knot", 
+    y = "similarity"
+    )
+
+
+## contrast, by parcel
+
+vanil.pc50.parcel.contrast %>% 
+  
+  filter(glm == "1tr1knot") %>%
+  
+  group_by(session, network, tr, parcel) %>%
+  summarize(simil.contrast = mean(simil.contrast))  %>% ## average across subjects
+  
+  ggplot(aes(tr, simil.contrast)) +
+  geom_hline(yintercept = 0) +
+  geom_line(aes(group = parcel), size = 1, alpha = 0.25) +
+  
+  facet_grid(vars(network), vars(session)) +
+  
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "bottom") +
+  labs(
+    title = "similarity contrast over target epoch per parcel | 1tr1knot", 
+    y = "I-I versus I-C similarity"
+    )
+
+## t stat, by network
+
+vanil.pc50.parcel.contrast %>%
+  
+  filter(glm == "1tr1knot") %>%
+  
+  group_by(session, network, tr, parcel) %>%
+  summarize(t.stat = t.test(simil.contrast, alternative = "greater")$statistic) %>%
+  
+  group_by(session, network, parcel) %>%
+  mutate(is.sig = ifelse(any(t.stat > 3), TRUE, FALSE)) %>%
+  
+  ggplot(aes(tr, t.stat)) +
+  geom_hline(yintercept = 0) +
+  geom_hline(yintercept = 2, linetype = "dashed", color = "grey50") +
+  geom_line(aes(group = parcel, alpha = is.sig), size = 1) +
+  
+  facet_grid(vars(network), vars(session)) +
+  
+  scale_alpha_manual(values = c("TRUE" = 0.9, "FALSE" = 0.2)) +
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "none") +
+  labs(
+    title = "similarity contrast over target epoch per parcel | 1tr1knot", 
+    y = "t statistic",
+    caption = "dark lines are parcels with any TR with t > 3"
+  )
+
+
+```
+
+
+## DMCC-34
+
+Now just for the DMCC34 parcels.
+
+### by network
+
+__aggregated across parcels within network__
+
+```{r curves_network_dmcc34, fig.height = 12}
+
+## z values, by network
+
+vanil.pc50.dmcc34 %>%
+  
+  group_by(session, network, tr, subj, celltype, glm) %>%
+  summarize(simil = mean(simil)) %>%  ## average across parcels
+  
+  ggplot(aes(tr, simil, fill = celltype, color = celltype)) +
+  geom_hline(yintercept = 0) +
+  stat_summary(fun.data = "mean_cl_boot", geom = "ribbon", alpha = 0.25) +
+  stat_summary(fun.y = "mean", geom = "line", size = 1) +
+  
+  facet_grid(vars(network), vars(session, glm)) +
+  
+  scale_fill_manual(values = colors.celltype) +
+  scale_color_manual(values = colors.celltype) +
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "bottom") +
+  labs(
+    title = "pairwise similarities over target epoch | dmcc34", 
+    y = "similarity", 
+    caption = "bands: bootstrapped 95% CI of across-subject mean"
+    )
+
+## contrast, by network
+
+vanil.pc50.dmcc34 %>%
+  
+  group_by(session, network, tr, subj, celltype, glm) %>%
+  summarize(simil = mean(simil)) %>%  ## average across parcels
+  
+  pivot_wider(names_from = "celltype", values_from = "simil") %>%  ## get contrast
+  mutate(simil.contrast = I_I - I_C) %>%
+  
+  
+  ggplot(aes(tr, simil.contrast, color = glm, fill = glm)) +
+  geom_hline(yintercept = 0) +
+  stat_summary(fun.data = "mean_cl_boot", geom = "ribbon", alpha = 0.25) +
+  stat_summary(fun.y = "mean", geom = "line", size = 1) +
+  
+  facet_grid(vars(network), vars(session)) +
+  
+  scale_fill_manual(values = colors.glm) +
+  scale_color_manual(values = colors.glm) +
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "bottom") +
+  labs(
+    title = "similarity contrast over target epoch | dmcc34", 
+    y = "I-I versus I-C similarity", 
+    caption = "bands: bootstrapped 95% CI of across-subject mean"
+    )
+
+## t stat, by network
+
+vanil.pc50.dmcc34 %>%
+  
+  group_by(session, network, tr, celltype, glm, subj) %>%
+  summarize(simil = mean(simil)) %>%  ## average across parcels
+  
+  pivot_wider(names_from = "celltype", values_from = "simil") %>%  ## get contrast
+  mutate(simil.contrast = I_I - I_C) %>%
+  
+  summarize(t.stat = t.test(simil.contrast, alternative = "greater")$statistic) %>%
+  
+  
+  ggplot(aes(tr, t.stat, color = glm)) +
+  geom_hline(yintercept = 0) +
+  geom_hline(yintercept = 2, linetype = "dashed", color = "grey50") +
+  geom_line(size = 2) +
+  
+  facet_grid(vars(network), vars(session)) +
+  
+  scale_color_manual(values = colors.glm) +
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "none") +
+  labs(
+    title = "similarity contrast over target epoch | dmcc34", 
+    y = "t statistic",
+    caption = "dashed line at t = 2"
+  )
+
+
+```
+
+### by parcel
+
+__aggregated across subjects__
+
+#### 2tr1knot
+
+```{r curves_parcel_dmcc34_2tr1knot, fig.height = 12}
+
+## z values, by parcel
+
+vanil.pc50.dmcc34 %>%
+  
+  filter(glm == "2tr1knot") %>%
+  
+  group_by(session, network, tr, celltype, parcel) %>%
+  summarize(simil = mean(simil)) %>%  ## average across subjects
+  
+  ggplot(aes(tr, simil, fill = celltype, color = celltype)) +
+  geom_hline(yintercept = 0) +
+  geom_line(aes(group = parcel), size = 1, alpha = 0.5) +
+  
+  facet_grid(vars(network), vars(session, celltype)) +
+  
+  scale_fill_manual(values = colors.celltype) +
+  scale_color_manual(values = colors.celltype) +
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "bottom") +
+  labs(
+    title = "pairwise similarities over target epoch per parcel | 2tr1knot, dmcc34", 
+    y = "similarity"
+    )
+
+
+## contrast, by parcel
+
+vanil.pc50.parcel.contrast %>% 
+  
+  filter(glm == "2tr1knot", parcel.num %in% dmcc34) %>%
+  
+  group_by(session, network, tr, parcel) %>%
+  summarize(simil.contrast = mean(simil.contrast))  %>% ## average across subjects
+  
+  ggplot(aes(tr, simil.contrast)) +
+  geom_hline(yintercept = 0) +
+  geom_line(aes(group = parcel), size = 1, alpha = 0.25) +
+  
+  facet_grid(vars(network), vars(session)) +
+  
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "bottom") +
+  labs(
+    title = "similarity contrast over target epoch per parcel | 2tr1knot, dmcc34", 
+    y = "I-I versus I-C similarity"
+    )
+
+## t stat, by network
+
+vanil.pc50.parcel.contrast %>%
+  
+  filter(glm == "2tr1knot", parcel.num %in% dmcc34) %>%
+  
+  group_by(session, network, tr, parcel) %>%
+  summarize(t.stat = t.test(simil.contrast, alternative = "greater")$statistic) %>%
+  
+  group_by(session, network, parcel) %>%
+  mutate(is.sig = ifelse(any(t.stat > 3), TRUE, FALSE)) %>%
+  
+  ggplot(aes(tr, t.stat)) +
+  geom_hline(yintercept = 0) +
+  geom_hline(yintercept = 2, linetype = "dashed", color = "grey50") +
+  geom_line(aes(group = parcel, alpha = is.sig), size = 1) +
+  
+  facet_grid(vars(network), vars(session)) +
+  
+  scale_alpha_manual(values = c("TRUE" = 0.9, "FALSE" = 0.2)) +
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "none") +
+  labs(
+    title = "similarity contrast over target epoch per parcel | 2tr1knot, dmcc34", 
+    y = "t statistic",
+    caption = "dark lines are parcels with any TR with t > 3"
+  )
+
+
+```
+
+#### 1tr1knot
+
+```{r curves_parcel_dmcc34_1tr1knot, fig.height = 12}
+
+## z values, by parcel
+
+vanil.pc50.dmcc34 %>%
+  
+  filter(glm == "1tr1knot") %>%
+  
+  group_by(session, network, tr, celltype, parcel) %>%
+  summarize(simil = mean(simil)) %>%  ## average across subjects
+  
+  ggplot(aes(tr, simil, fill = celltype, color = celltype)) +
+  geom_hline(yintercept = 0) +
+  geom_line(aes(group = parcel), size = 1, alpha = 0.5) +
+  
+  facet_grid(vars(network), vars(session, celltype)) +
+  
+  scale_fill_manual(values = colors.celltype) +
+  scale_color_manual(values = colors.celltype) +
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "bottom") +
+  labs(
+    title = "pairwise similarities over target epoch per parcel | 1tr1knot, dmcc34", 
+    y = "similarity"
+    )
+
+
+## contrast, by parcel
+
+vanil.pc50.parcel.contrast %>% 
+  
+  filter(glm == "1tr1knot", parcel.num %in% dmcc34) %>%
+  
+  group_by(session, network, tr, parcel) %>%
+  summarize(simil.contrast = mean(simil.contrast))  %>% ## average across subjects
+  
+  ggplot(aes(tr, simil.contrast)) +
+  geom_hline(yintercept = 0) +
+  geom_line(aes(group = parcel), size = 1, alpha = 0.25) +
+  
+  facet_grid(vars(network), vars(session)) +
+  
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "bottom") +
+  labs(
+    title = "similarity contrast over target epoch per parcel | 1tr1knot, dmcc34", 
+    y = "I-I versus I-C similarity"
+    )
+
+## t stat, by network
+
+vanil.pc50.parcel.contrast %>%
+  
+  filter(glm == "1tr1knot", parcel.num %in% dmcc34) %>%
+  
+  group_by(session, network, tr, parcel) %>%
+  summarize(t.stat = t.test(simil.contrast, alternative = "greater")$statistic) %>%
+  
+  group_by(session, network, parcel) %>%
+  mutate(is.sig = ifelse(any(t.stat > 3), TRUE, FALSE)) %>%
+  
+  ggplot(aes(tr, t.stat)) +
+  geom_hline(yintercept = 0) +
+  geom_hline(yintercept = 2, linetype = "dashed", color = "grey50") +
+  geom_line(aes(group = parcel, alpha = is.sig), size = 1) +
+  
+  facet_grid(vars(network), vars(session)) +
+  
+  scale_alpha_manual(values = c("TRUE" = 0.9, "FALSE" = 0.2)) +
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "none") +
+  labs(
+    title = "similarity contrast over target epoch per parcel | 1tr1knot, dmcc34", 
+    y = "t statistic",
+    caption = "dark lines are parcels with any TR with t > 3"
+  )
+
+
+```
+
+<!-- ### subject curves within parcel -->
+
+<!-- A closer look at similarity timecourses within these parcels. -->
+
+
+```{r curves_withinparcel_dmcc34_2tr1knot_allconds, fig.height = 45, eval = FALSE}
+
+## z values, by parcel
+
+vanil.pc50.dmcc34 %>%
+  
+  filter(glm == "2tr1knot") %>%
+  
+  group_by(session, network, tr, parcel, subj, celltype) %>%  ## aggregate by celltype
+  summarize(simil = mean(simil)) %>%
+  
+  ggplot(aes(tr, simil, fill = celltype, color = celltype)) +
+  geom_hline(yintercept = 0) +
+  geom_line(aes(group = subj), size = 0.5, alpha = 0.2) +
+  stat_summary(fun.data = "mean_cl_boot", geom = "ribbon", alpha = 0.5) +
+  stat_summary(fun.y = "mean", geom = "line", size = 1) +
+  
+  facet_grid(vars(parcel), vars(session, celltype), scales = "free_y") +
+  
+  scale_fill_manual(values = colors.celltype) +
+  scale_color_manual(values = colors.celltype) +
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "bottom", strip.text.y = element_text(angle = 0, size = 6, hjust = 0, vjust = 0.5)) +
+  labs(
+    title = "pairwise similarities over target epoch | dmcc34", 
+    y = "similarity", 
+    caption = "bands: bootstrapped 95% CI of across-subject mean"
+    )
+
+
+```
+
+
+```{r curves_withinparcel_dmcc34_2tr1knot_contrast, fig.height = 45, fig.width = 7, eval = FALSE}
+
+vanil.pc50.parcel.contrast %>% 
+  
+  filter(glm == "2tr1knot", parcel.num %in% dmcc34) %>%
+  
+  ggplot(aes(tr, simil.contrast)) +
+  geom_hline(yintercept = 0) +
+  geom_line(aes(group = subj), size = 0.5, alpha = 0.2) +
+  stat_summary(fun.data = "mean_cl_boot", geom = "ribbon", alpha = 0.5) +
+  stat_summary(fun.y = "mean", geom = "line", size = 1) +
+  
+  facet_grid(vars(parcel), vars(session), scales = "free_y") +
+  
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "bottom", strip.text.y = element_text(angle = 0, size = 6, hjust = 0, vjust = 0.5)) +
+  labs(
+    title = "similarity contrast over target epoch per parcel | 1tr1knot, dmcc34", 
+    y = "similarity", 
+    caption = "bands: bootstrapped 95% CI of across-subject mean"
+    )
+
+
+```
+
+
+# ROI analysis
+
+## models and stats
+
+
+```{r roi_analysis, fig.height = 15, fig.width = 8}
+
+## fit
+
+vanil.roi <- vanil.pc50.parcel.contrast %>%
+  filter(tr > 1, tr < 7) %>%
+  split(paste(.$parcel, .$session, .$network, .$glm, sep = "."))
+
+mods.vanil.roi <- lapply(vanil.roi, function(x) lmer(simil.contrast ~ 1 + (1 | subj), x))
+
+## extract
+
+coef.vanil.roi <- lapply(mods.vanil.roi, tidy_lmer)
+
+## format
+
+coef.vanil.roi %<>%
+  bind_rows(.id = "model.id") %>%
+  cbind(reshape2::colsplit(.$model.id, "\\.", c("parcel", "session", "network", "glm")))
+
+## adjust
+
+coef.vanil.roi %<>%
+  group_by(session, glm) %>%
+  mutate(p.fdr = p.adjust(p.value, "fdr"))
+
+## plot
+
+coef.vanil.roi %>%
+
+  select(-p.value, -p.fdr, -estimate, -se, -df, -model.id) %>%
+  pivot_wider(names_from = "glm", values_from = statistic, names_prefix = "glm.") %>%
+
+  ggplot(aes(glm.1tr1knot, glm.2tr1knot)) +
+  geom_point(
+    aes(),
+    size = 1.5, shape = 21, fill = "black", color = "grey"
+  ) +
+
+  facet_grid(vars(network), vars(session)) +
+  geom_hline(yintercept = 0) +
+  geom_vline(xintercept = 0) +
+  geom_abline() +
+
+  labs(title = "stroop t statistics, estimated over TRs 2-6")
+
+## list
+
+roi.bas.1tr1knot <- coef.vanil.roi %>%
+  filter(
+    p.fdr < 0.05, session == "baseline", statistic > 0,
+    glm == "1tr1knot"
+    ) %>%
+  pull(parcel) %>%
+  unique
+
+roi.bas.2tr1knot <- coef.vanil.roi %>%
+  filter(
+    p.fdr < 0.05, session == "baseline", statistic > 0,
+    glm == "2tr1knot"
+    ) %>%
+  pull(parcel) %>%
+  unique
+
+roi.pro.1tr1knot <- coef.vanil.roi %>%
+  filter(
+    p.fdr < 0.05, session == "proactive", statistic > 0,
+    glm == "1tr1knot"
+    ) %>%
+  pull(parcel) %>%
+  unique
+
+roi.pro.2tr1knot <- coef.vanil.roi %>%
+  filter(
+    p.fdr < 0.05, session == "proactive", statistic > 0,
+    glm == "2tr1knot"
+    ) %>%
+  pull(parcel) %>%
+  unique
+
+```
+
+
+At FDR-adjusted $\alpha$ = 0.05
+
+
+* `r length(roi.bas.2tr1knot)` parcels for 2tr1knot, baseline.
+
+`r length(roi.bas.2tr1knot)`
+
+* `r length(roi.bas.1tr1knot)` parcels for 1tr1knot, baseline.
+
+`r length(roi.bas.1tr1knot)`
+
+* `r length(roi.pro.2tr1knot)` parcels for 2tr1knot, proactive.
+
+`r length(roi.pro.2tr1knot)`
+
+* `r length(roi.pro.1tr1knot)` parcels for 1tr1knot, proactive.
+
+`r length(roi.pro.1tr1knot)`
+
+\end{itemize}
+
+
+## brains
+
+
+```{r}
+
+## add cols for plotting
+
+coef.vanil.roi %<>%
+  mutate(
+    hemi = substr(parcel, 1, 1),
+    num.roi = match(parcel, parcellation$key)
+    )
+
+```
+
+
+* the t statistics from above are plotted on brains here.
+
+## unthresholded
+
+### baseline 1tr1knot
+
+```{r, fig.height = 7, fig.width = 11}
+
+coef.vanil.roi %>%
+  filter(session == "baseline", glm == "1tr1knot") %>%
+  build_overlay("statistic", template = schaefer) %>%
+  plot_surface(underlay = hcp)
+
+```
+
+### baseline 2tr1knot
+
+```{r, fig.height = 7, fig.width = 11}
+
+coef.vanil.roi %>%
+  filter(session == "baseline", glm == "2tr1knot") %>%
+  build_overlay("statistic", template = schaefer) %>%
+  plot_surface(underlay = hcp)
+
+```
+
+### proactive 1tr1knot
+
+```{r, fig.height = 7, fig.width = 11}
+
+coef.vanil.roi %>%
+  filter(session == "proactive", glm == "1tr1knot") %>%
+  build_overlay("statistic", template = schaefer) %>%
+  plot_surface(underlay = hcp)
+
+```
+
+### proactive 2tr1knot
+
+```{r, fig.height = 7, fig.width = 11}
+
+coef.vanil.roi %>%
+  filter(session == "proactive", glm == "2tr1knot") %>%
+  build_overlay("statistic", template = schaefer) %>%
+  plot_surface(underlay = hcp)
+
+```
+
+
+## thresholded
+
+
+### baseline 1tr1knot
+
+```{r, fig.height = 7, fig.width = 11}
+
+coef.vanil.roi %>%
+  filter(session == "baseline", glm == "1tr1knot") %>%
+  mutate(statistic = ifelse(p.fdr < 0.05 & statistic > 0, statistic, 0)) %>%
+  build_overlay("statistic", template = schaefer) %>%
+  plot_surface(underlay = hcp)
+
+```
+
+### baseline 2tr1knot
+
+```{r, fig.height = 7, fig.width = 11}
+
+coef.vanil.roi %>%
+  filter(session == "baseline", glm == "2tr1knot") %>%
+  mutate(statistic = ifelse(p.fdr < 0.05 & statistic > 0, statistic, 0)) %>%
+  build_overlay("statistic", template = schaefer) %>%
+  plot_surface(underlay = hcp)
+
+```
+
+### proactive 1tr1knot
+
+```{r, fig.height = 7, fig.width = 11}
+
+coef.vanil.roi %>%
+  filter(session == "proactive", glm == "1tr1knot") %>%
+  mutate(statistic = ifelse(p.fdr < 0.05 & statistic > 0, statistic, 0)) %>%
+  build_overlay("statistic", template = schaefer) %>%
+  plot_surface(underlay = hcp)
+
+```
+
+### proactive 2tr1knot
+
+```{r, fig.height = 7, fig.width = 11}
+
+coef.vanil.roi %>%
+  filter(session == "proactive", glm == "2tr1knot") %>%
+  mutate(statistic = ifelse(p.fdr < 0.05 & statistic > 0, statistic, 0)) %>%
+  build_overlay("statistic", template = schaefer) %>%
+  plot_surface(underlay = hcp)
+
+```
+

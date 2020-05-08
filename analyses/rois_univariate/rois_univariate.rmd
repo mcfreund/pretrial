@@ -515,7 +515,7 @@ coef.means.x %>%
 
 * t statistics from 2tr1knot and 1tr1knot models are plotted against each other.
 
-```{r}
+```{r, fig.height = 15, fig.width = 8}
 
 ## fit
 
@@ -566,7 +566,7 @@ coef.means.roi %>%
 
 roi.univ.bas.1tr1knot <- coef.means.roi %>%
   filter(
-    p.fdr < 0.05, session == "baseline", statistic > 0,
+    p.fdr < 0.05, session == "baseline", statistic > 0, term == "trial.typeInCon",
     glm == "1tr1knot"
     ) %>%
   pull(parcel) %>%
@@ -574,11 +574,29 @@ roi.univ.bas.1tr1knot <- coef.means.roi %>%
 
 roi.univ.bas.2tr1knot <- coef.means.roi %>%
   filter(
-    p.fdr < 0.05, session == "baseline", statistic > 0,
+    p.fdr < 0.05, session == "baseline", statistic > 0, term == "trial.typeInCon",
     glm == "2tr1knot"
     ) %>%
   pull(parcel) %>%
   unique
+
+roi.univ.pro.1tr1knot <- coef.means.roi %>%
+  filter(
+    p.fdr < 0.05, session == "proactive", statistic > 0, term == "trial.typeInCon",
+    glm == "1tr1knot"
+    ) %>%
+  pull(parcel) %>%
+  unique
+
+roi.univ.pro.2tr1knot <- coef.means.roi %>%
+  filter(
+    p.fdr < 0.05, session == "proactive", statistic > 0, term == "trial.typeInCon",
+    glm == "2tr1knot"
+    ) %>%
+  pull(parcel) %>%
+  unique
+
+
 
 ## add cols for plotting
 
@@ -589,15 +607,24 @@ coef.means.roi %<>%
     )
 
 ```
+At FDR-adjusted $\alpha$ = 0.05
 
-\begin{itemize}
+* `r length(roi.univ.bas.2tr1knot)` parcels for 2tr1knot, baseline.
 
-  \item \Sexpr{length(roi.univ.bas.2tr1knot)} parcels for 2tr1knot, baseline.
-  \item \Sexpr{length(roi.univ.bas.1tr1knot)} parcels for 1tr1knot, baseline.
-  \item \Sexpr{length(roi.univ.bas.2tr1knot)} parcels for 2tr1knot, proactive.
-  \item \Sexpr{length(roi.univ.bas.1tr1knot)} parcels for 1tr1knot, proactive
+`r roi.univ.bas.2tr1knot`
 
-\end{itemize}
+* `r length(roi.univ.bas.1tr1knot)` parcels for 1tr1knot, baseline.
+
+`r roi.univ.bas.1tr1knot`
+
+* `r length(roi.univ.pro.2tr1knot)` parcels for 2tr1knot, proactive.
+
+`r roi.univ.pro.2tr1knot`
+
+* `r length(roi.univ.pro.1tr1knot)` parcels for 1tr1knot, proactive.
+
+`r roi.univ.pro.1tr1knot`
+
 
 
 # Brains
@@ -610,8 +637,6 @@ coef.means.roi %<>%
 
 ```{r, fig.height = 7, fig.width = 11}
 
-## baseline 1tr1knot
-
 coef.means.roi %>%
   filter(term == "trial.typeInCon", session == "baseline", glm == "1tr1knot") %>%
   build_overlay("statistic", template = schaefer) %>%
@@ -623,8 +648,6 @@ coef.means.roi %>%
 
 ```{r, fig.height = 7, fig.width = 11}
 
-## proactive 2tr1knot
-
 coef.means.roi %>%
   filter(term == "trial.typeInCon", session == "baseline", glm == "2tr1knot") %>%
   build_overlay("statistic", template = schaefer) %>%
@@ -632,11 +655,9 @@ coef.means.roi %>%
 
 ```
 
-## proactive 1tr1knot
+### proactive 1tr1knot
 
 ```{r, fig.height = 7, fig.width = 11}
-
-## baseline 1tr1knot
 
 coef.means.roi %>%
   filter(term == "trial.typeInCon", session == "proactive", glm == "1tr1knot") %>%
@@ -645,14 +666,12 @@ coef.means.roi %>%
 
 ```
 
-## proactive 2tr1knot
+### proactive 2tr1knot
 
 ```{r, fig.height = 7, fig.width = 11}
 
-## baseline 1tr1knot
-
 coef.means.roi %>%
-  filter(term == "trial.typeInCon", session == "proactive", glm == "2r1knot") %>%
+  filter(term == "trial.typeInCon", session == "proactive", glm == "2tr1knot") %>%
   build_overlay("statistic", template = schaefer) %>%
   plot_surface(underlay = hcp)
 
@@ -666,11 +685,9 @@ coef.means.roi %>%
 
 ```{r, fig.height = 7, fig.width = 11}
 
-## baseline 1tr1knot
-
 coef.means.roi %>%
   filter(term == "trial.typeInCon", session == "baseline", glm == "1tr1knot") %>%
-  mutate(statistic = ifelse(p.fdr < 0.05, 0, statistic)) %>%
+  mutate(statistic = ifelse(p.fdr < 0.05 & statistic > 0, statistic, 0)) %>%
   build_overlay("statistic", template = schaefer) %>%
   plot_surface(underlay = hcp)
 
@@ -680,39 +697,33 @@ coef.means.roi %>%
 
 ```{r, fig.height = 7, fig.width = 11}
 
-## proactive 2tr1knot
-
 coef.means.roi %>%
   filter(term == "trial.typeInCon", session == "baseline", glm == "2tr1knot") %>%
-  mutate(statistic = ifelse(p.fdr < 0.05, 0, statistic)) %>%
+  mutate(statistic = ifelse(p.fdr < 0.05 & statistic > 0, statistic, 0)) %>%
   build_overlay("statistic", template = schaefer) %>%
   plot_surface(underlay = hcp)
 
 ```
 
-## proactive 1tr1knot
+### proactive 1tr1knot
 
 ```{r, fig.height = 7, fig.width = 11}
-
-## baseline 1tr1knot
 
 coef.means.roi %>%
   filter(term == "trial.typeInCon", session == "proactive", glm == "1tr1knot") %>%
-  mutate(statistic = ifelse(p.fdr < 0.05, 0, statistic)) %>%
+  mutate(statistic = ifelse(p.fdr < 0.05 & statistic > 0, statistic, 0)) %>%
   build_overlay("statistic", template = schaefer) %>%
   plot_surface(underlay = hcp)
 
 ```
 
-## proactive 2tr1knot
+### proactive 2tr1knot
 
 ```{r, fig.height = 7, fig.width = 11}
 
-## baseline 1tr1knot
-
 coef.means.roi %>%
-  filter(term == "trial.typeInCon", session == "proactive", glm == "2r1knot") %>%
-  mutate(statistic = ifelse(p.fdr < 0.05, 0, statistic)) %>%
+  filter(term == "trial.typeInCon", session == "proactive", glm == "2tr1knot") %>%
+  mutate(statistic = ifelse(p.fdr < 0.05 & statistic > 0, statistic, 0)) %>%
   build_overlay("statistic", template = schaefer) %>%
   plot_surface(underlay = hcp)
 

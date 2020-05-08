@@ -6,8 +6,8 @@
 
 ## data ----
 
-pretrial <- data.table::fread(here("data", "pretrial_behavior.csv"))
-pretrial.subjsum <- data.table::fread(here("data", "pretrial_subjsumm.csv"))
+pretrial <- data.table::fread(here::here("data", "pretrial_behavior.csv"))
+pretrial.subjsum <- data.table::fread(here::here("data", "pretrial_subjsumm.csv"))
 
 ## paths: pointers for atlases and for BOLD timeseries ----
 
@@ -84,7 +84,31 @@ networks <- c("Vis", "DorsAttn", "SalVentAttn", "Cont", "Default", "SomMot", "Li
 ## atlas ----
 
 library(cifti)
-parcellation <- read_atlas("schaefer400")
+parcellation <- mikeutils::read_atlas("schaefer400")
+
+
+hcp <- list(
+  L  = readGIfTI(
+    file.path(dir.atlas, "surf", "HCP_S1200_GroupAvg_v1", "S1200.L.midthickness_MSMAll.32k_fs_LR.surf.gii")
+  ),
+  R = readGIfTI(
+    file.path(dir.atlas, "surf", "HCP_S1200_GroupAvg_v1", "S1200.R.midthickness_MSMAll.32k_fs_LR.surf.gii")
+  )
+)
+
+over <- list(
+  L = parcellation$atlas[1:(nrow(parcellation$atlas) / 2)], 
+  R = parcellation$atlas[(nrow(parcellation$atlas) / 2):nrow(parcellation$atlas)]
+)
+
+schaefer <- list(
+  L = read_gifti2matrix(
+    file.path(dir.schaefer, "Schaefer2018_400Parcels_7Networks_order_L.label.gii")
+  ) %>% c,
+  R = read_gifti2matrix(
+    file.path(dir.schaefer, "Schaefer2018_400Parcels_7Networks_order_R.label.gii")
+  ) %>% c
+)
 
 
 ## palettes ----
@@ -92,3 +116,60 @@ parcellation <- read_atlas("schaefer400")
 # colors.profs <- c(
 #   incon = "#d95f02ff", targt = "#1b9e77ff", distr = "#7570b3ff", targt.incon = "#26190dff", targt.distr = "#4682b4ff"
 # )
+
+## rois ----
+
+dmcc34 <- c(
+  22, 77, 78, 86, 87, 91, 93, 99, 101, 103, 105, 107, 110, 127, 130, 139, 140,
+  144, 148, 172, 175, 185, 189, 219, 301, 303, 306, 314, 340, 346, 347, 349, 350, 353
+)
+
+
+## functions ----
+
+
+
+fold <- function(m) {
+  
+  ## get average
+  mt <- t(m)
+  avg <- (m[lower.tri(m)] + mt[lower.tri(mt)]) / 2
+  
+  ## add back to matrix
+  m[lower.tri(m)] <- avg
+  m <- t(m)
+  m[lower.tri(m)] <- avg
+  
+  m
+  
+}
+
+
+
+plot_matrix <- function(d) {
+  
+  if (is.matrix(d)) d <- reshape2::melt(d)
+  
+  d %>%
+    mutate(.col = factor(.col, levels = rev(unique(.col)))) %>%
+    ggplot(aes(.row, .col, fill = value)) +
+    geom_tile() +
+    # scale_fill_viridis() +
+    scale_fill_gradient(low = "black", high = "white") +
+    theme(
+      # legend.position = "none", 
+      panel.grid = element_blank(), 
+      # panel.background = element_blank(),
+      axis.text.x = element_blank(),
+      # axis.ticks = element_blank(), 
+      axis.title = element_blank()
+    )
+  
+}
+
+tidy_lmer <- function(x) {
+  coefs <- as.data.frame(coef(summary(x)))
+  coefs$term <- rownames(coefs)
+  dplyr::rename(coefs, estimate = "Estimate", se = "Std. Error", "statistic" = "t value", p.value = "Pr(>|t|)")
+}
+
