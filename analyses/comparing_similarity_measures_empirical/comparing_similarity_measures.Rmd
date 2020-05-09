@@ -8,194 +8,238 @@ output:
     highlight: zenburn
 ---
 
+<script type="text/x-mathjax-config">
+MathJax.Hub.Config({
+  TeX: { 
+      equationNumbers: {
+ 
+            autoNumber: "ams",
+            formatNumber: function (n) {return +n}
+      } 
+  }
+});
+</script>
 
-# About
 
-## Measures of similarity
+# 0. About
 
-Analyses within this document consider several different measures of similarity---12 measures in all.
-I define these measures here.
+Here 12 different forms of similarity are considered.
 
-In short, I consider three __types of similarity__: _linear correlation_, _Euclidean distance_, and _scaled Euclidean distance_.
-For each type of similarity, I also consider two different __methods of estimation__: _between-run_ and via _cross-validation_.
-Finally, I consider two different __types of normalization__: _"raw" (unnormalized)_, and spatially _pre-whitened_ (or "multivariate noise-normalized").
-Thus, in all, I compare $3 * 2 * 2 = 12$ different measures of similarity.
+* __3 measures of similarity__
+    * linear **correlation**
+    * **euclidean** distance
+    * **standardized euclidean** distance
 
+* __2 methods of estimation__
+    * **vanilla** RSA: assessing similarity of patterns* *across scanning run**
+    * **"cross-validated"** RSA: tweaking cross-run estimation procedure so that measures become *unbiased*
 
-### notation
-  * $N_\text{vert}$: number of vertices in a given parcel.
-  * $\mathbf{x}_{r}$: a row vector of beta estimates from run $r$ and condition $x$ for a given subject and parcel.
-  This vector would contain $N_\text{vert}$ beta values, one for each vertex.
-    * e.g., $\mathbf{x}_{1}$ would indicate the betas from run $1$.
-  * $\mathbf{y}_{r}$: same as above, but for condition $y$
-  * $\bar{x}_{r}$: the across-vertex, i.e., __parcel-wise__ mean for run $r$ and condition $x$ (i.e.,  $\mathbf{x}_{r}\mathbf{1}/N_\text{vert}$)
+* __2 normalizing transforms__
+    * **"raw"**, or un-normalized
+    * spatially **prewhitened**, or "multivariate noise normalized"
+
+Below, these things are described and references linked.
+
+## measures of similarity and "methods of estimation"
 
 ### linear correlation
 
+#### vanilla method
 
-#### between-run correlation
+The correlation between two pattern vectors $x, y$ can be written
 
-The Pearson correlation between two conditions ($x, y$) for scanning runs 1 and 2.
+\[
+r_\textit{vanilla} = \text{cor}(x, y) = \frac
+{\text{Cov}(x, y)}
+{\sqrt{\text{Var}(x)\text{Var}(y)}}
+\]
 
+i.e., the covariance of a measure standardized by the (rooted product of the) variances.
 
-\[r_\textit{btw}(x_1, y_2) = \frac
-{
-(\mathbf{x}_{1} - \bar{x}_{1})
-(\mathbf{y}_{2} - \bar{y}_{2})^T
-}
-{\sqrt{(\mathbf{x}_1 - \bar{x}_1)^2
-(\mathbf{y}_2 - \bar{y}_2)^{2}}}\]
+This is equivalent to writing
 
-Or equivalently,
+\[
+  r_\textit{vanilla} = \frac{\text{Cov}(x, y)}{\sqrt{\text{Cov}(x, x)\text{Cov}(y, y)}}
+\]
 
-\[r_\textit{btw}(x_1, y_2) = 
-\frac
-{\text{cov}(\mathbf{x}_1, \mathbf{y}_2)}
-{\sqrt{\text{var}({\mathbf{x}_1})\text{var}({\mathbf{y}_2})}}\]
+because the covariance of a measure with itself is the variance.
 
-* In other words, Pearson's can be thought of as the covariance between conditions $x$ and $y$ between run 1 and 2, scaled by the square-rooted product of their variances (i.e., the product of their standard deviations).
+In the context of "vanilla" / cross-run RSA, the correlation of $x$ and $y$  is estimated _across scanning runs_ --- e.g., $x$ from run 1 and $y$ from run 2:
 
-* The Pearson correlation is *biased*, as with increasing noise, it shrinks towards zero, away from the true (noise-free) value of the correlation.
+\begin{equation}
 
-#### cross-validated correlation
+  r_\textit{vanilla} = \text{cor}(x_{(1)}, y_{(2)}) = 
+  \frac{\text{Cov}(x_{(1)}, y_{(2)})}
+  {\sqrt{\text{Cov}(x_{(1)}, x_{(1)})\text{Cov}(y_{(2)}, y_{(2)})}}
+  
+\end{equation}
 
-The cross-validated correlation between two conditions ($x, y$) for scanning runs 1 and 2.
+Estimating across runs gives robustness to potential design artifacts stemming from temporal autocorrelation [(Alink et al, 2015)](https://www.biorxiv.org/content/10.1101/032391v2).
 
-\[r_\textit{cv}(x_1, y_2) = 
-\frac
-{\text{cov}(\mathbf{x}_1, \mathbf{y}_2)}
-{\sqrt{\text{cov}({\mathbf{x}_1, \mathbf{x}_2})\text{cov}({\mathbf{y}_1, \mathbf{y}_2})}}\]
+<!-- Because this yields two values --- $cor(x_1, y_2)$ and $cor(x_2, y_1)$ --- these are averaged together. -->
 
-* The cross-validated correlation does not scale the covariance by the product of the standard deviations. 
-Instead, it scales the covariance by the square-rooted product of the *cross-run covariances* within each condition.
+#### cross-validated method
 
-* Think of the within-condition cross-run covariance as an estimate of the pattern relaibility.
-Correlations between patterns with poor reliability will be *increased*.
-This is closely related to the **spearman-brown prophecy** formula.
+To make the linear correlation unbiased, the [Spearman's correction for attenuation](https://en.wikipedia.org/wiki/Correction_for_attenuation) is applied.
 
-* The cross-validated correlation **is not a true correlation statistic**: it can range greater than 1 or -1, and can be undefined if the product of the cross-run covariances is negative (because of the square root).
-Depending on the SNR, this potential for undefined similarities will likely pose a problem for group-level analyses, as there may be substantial portions of data missing.
+The idea is that the maximum observable correlation between $x_{(1)}$ and $y_{(2)}$ is bounded by the (root product of their) reliabilities (lower reliability, lower correlation).
+So, the observed correlation values are scaled by their maximum value, which is a function of their reliability.
+Here, reliability is estimated as the cross-run covariance.
 
-* But, the upside to this measure is that it is *unbiased*: the expected value of this statistic (i.e., mean) is centered at the true value, regardless of the level of noise.
+Essentially, this amounts to swapping one out of each of the measures in the denominator of __(1)__, $x_{(1)}$ and  $y_{(2)}$, with an independent 'copy' of itself, $x_{(2)}$ and $y_{(1)}$:
 
-* This means that the expected value of the cross-validated correlation **does not depend on the amount of data** (i.e., number of trials in each GLM regressor).
-In theory, this should allow us to compare different trial types *without downsampling / throwing out data*.
+\begin{equation}
 
-* note also that *two* correlations are now generated per pair of conditions (i.e., the similarity matrix is not symmetric).
-This is because we can calculate $r_\textit{cv}(x_1, y_2)$ and $r_\textit{cv}(x_2, y_1)$.
+  r_\textit{cv} = \frac
+  {\text{Cov}(x_{(1)}, y_{(1)})}
+  {\sqrt{\text{Cov}(x_{(1)}, x_{(2)})\text{Cov}(y_{(1)}, y_{(2)})}}
+
+\end{equation}
+
+* see Appendix of [(Alink et al, 2015)](https://www.biorxiv.org/content/10.1101/032391v2) for expanded definition of cross-run correlation.
+
+* because a covariance between independent measurements can be $\leq 0$, the denominator of the cross-validated correlation can be undefined (because of the root).
+
+* this property is problematic for this measure, as even moderate amounts of noise can make this measure unstable and cause 'missing' data.
+
+* I include the measure here for completeness but it was indeed very unstable.
+
 
 ### euclidean distance
 
-#### between-run euclidean distance
+#### vanilla
 
-The Euclidean distance between two conditions ($x, y$) for scanning runs 1 and 2.
+The vanilla / cross-run squared euclidean distance can be written
 
-\[d_\textit{btw}(x_1, y_2) = \sqrt{(\mathbf{x}_{1} - \mathbf{y}_{2})(\mathbf{x}_{1} - \mathbf{y}_{2})^T} / N_\text{vert}\]
+\[
+d^2_\textit{vanilla} = \sum_{v = 1}^{V}(x_{v(1)} - y_{v(2)})^2
+\]
 
-* In other words, the root-sum-of-squares of the difference between $x$ in run 1 and $y$ in run 2.
+i.e., the sum of squared differences between voxels $v$ in $1, \dots V$ in pattern $x$ from run 1 and pattern $y$ from run 2.
 
-* To state another way: __the difference vector $\mathbf{x}_1 - \mathbf{y}_2$ is multiplied to itself (dot product) then this scalar value is square-rooted.__
-This can be thought of as yielding the *length of the difference vector*, i.e., distance from origin.
+The subtraction operation above can also be thought of in vector form, where $x$ and $y$ are vectors $\mathbf{x}$ and $\mathbf{y}$, and $\mathbf{a} = \mathbf{x} - \mathbf{y}$ is the difference vector, or vector [pointing from $\mathbf{y}$ to $\mathbf{x}$](https://www.google.com/search?q=vector+subtraction&client=firefox-b-1-d&sxsrf=ALeKk00syNVDPLbGdMF_spS_wgfJXqp50A:1589025736959&source=lnms&tbm=isch&sa=X&ved=2ahUKEwih_9uU3qbpAhVGK80KHT5hB4EQ_AUoAXoECA4QAw&biw=2400&bih=1185#imgrc=Tjt-W0VN7s-a4M).
+The squared euclidean distance can then be thought of as the squared _length_ of this difference vector.
+[The squared length of a vector is just a vector multiplied by itself.]
+So:
 
-* NB: The formula above differs from the typical euclidean distance as I've divided by the number of dimensions, $N_{vert}$.
-The typical euclidean distance increases with increasing dimenisons, so this division maintains comparaibility across parcels.
+\begin{equation}
+d^2_\textit{vanilla} = \mathbf{a}^2 = \mathbf{a} \cdot \mathbf{a} = \sum_{v = 1}^V a_v^2 =  \sum_{v = 1}^{V}(x_{v(1)} - y_{v(2)})^2
+\end{equation}
 
-* This measure is also *biased*, as in the presence of noise, identical patterns would appear as distant (dissimilar).
+#### cross-validated
 
+To make this measure unbiased, the trick here is to perform the subtraction *within-run*, then multiply the difference vectors *between-run*.
+This ensures that the two terms in the multiplication (two 'copies' of $\mathbf{a}$: $\mathbf{a}_{(1)}$ and $\mathbf{a}_{(2)}$) have independent errors.
+Because they are independent, [these error terms cancel in the multiplication](https://doi.org/10.1016/j.neuroimage.2015.12.012), meaning that the resulting product (distance) reflects only the true distance.
+<!-- swap one of the difference vectors above with an independent 'copy' of itself: -->
 
-#### cross-validated (squared) euclidean distance
+\begin{equation}
 
-The cross-validated (squared) Euclidean distance between two conditions ($x, y$) for scanning runs 1 and 2.
+d^2_\textit{cv} = \mathbf{a}_{(1)} \cdot \mathbf{a}_{(2)} = \sum_{v = 1}^V a_{v{(1)}}a_{v{(2)}} = \sum_{v = 1}^{V}(x_{v(1)} - y_{v(1)})(x_{v(2)} - y_{v(2)})
 
-\[d^2_\textit{cv}(x_1, y_2) = (\mathbf{x}_{1} - \mathbf{y}_{1})(\mathbf{x}_{2} - \mathbf{y}_{2})^T / N_\text{vert}\]
-
-* The cross-validated euclidean distance does not multiply the difference vector to itself.
-Instead, it calculates the difference vectors *separately in each run*, then multiplies them *across runs*.
-
-* The idea is that if there *is* a consistent difference between patterns, it should cross-validate across scanning runs (i.e., the dot product should be positive).
-But, if the difference is purely noise, then the dot product should be, on average, zero (no successful crossvaliation).
-
-* Thus, the cross-validated euclidean distance **is not a true distance metric**: it can range less than 0.
-Note that, because it can be negative, the square-root is not taken and the distance $d$ is left in squared units ($d^2$).
-
-* Like cross-validated correlation, this measure is also unbiased in the sense that the distance between indistinguishable patterns will have an expected value of zero.
-
-* note also that, in contrast to the cross-validated correlation, a *single* distance measure is generated per pair of conditions (assuming two runs). I.e., cross-validated euclidean distance matrices *are* symmetric.
-
-### scaled euclidean distance
-
-* the scaled euclidean distance is equivalent to the euclidean distances above (both between-run and cross-validated), except that, prior to caclulating the distances,
-the patterns are *z-score normalized* by subtracting the mean and dividing by the standard deviation of across-vertex betas.
-
-* this makes the (squared) euclidean distance more-or-less equivalent to linear correlation (a quick google search will show the exact form of the relation).
-
-* I computed scaled euclidean mostly as a sanity check.
+\end{equation}
 
 
-### pre-whitening
+If there is no consistent difference between $x$ and $y$ across scanning runs, then the expected value of $d^2_\textit{cv}$ is zero.
+(Note that, because $d^2_\textit{cv}$ can be negative, it is not square-rooted, but left as a squared euclidean distance.)
 
-Let $\mathbf{E}_r$ represent the matrix of residual timecourses for a given run $r$, parcel, and subject.
-I.e., $\mathbf{E}_1$ is of dimension $N_{\text{TRs}} \times N_{\text{vertices}}$ and corresponds to run 1.
+### standardized euclidean distance
 
-The vertex-by-vertex covariance matrix of $\mathbf{E}_1$ is given by $\mathbf{S}_1 = \mathbf{E}_1^T\mathbf{E}_1$.
+#### vanilla
 
-These covariance matrices give the spatial correlation structure of the noise within a given parcel for each run. 
-Each off-diagonal entry indicates the degree to which two vertices had residual time-courses that covaried during that run.
+If the patterns $x$ and $y$ are z-score standardized, the squared euclidean's distance between them will be [equivalent to the linear correlation, within a scaling factor](https://arxiv.org/abs/1601.02213).
 
-To pre-whiten beta coefficients $\mathbf{x}_1$, these covariance matrices are
+Let the tilde denote this standardization, e.g., 
+\[
+\widetilde{x}_{v(1)} = 
+\frac{x_{v(1)} - \bar{x}_{v(1)}}
+{\text{sd}(x_{v(1)})}
+\]
 
-  1. regularized by shrinking them towards an identity matrix by a factor $\lambda$, e.g.:
+so that
 
-  \[\mathbf{S}^\textit{(shrnk.)}_1 = \lambda \mathbf{I} + (1 - \lambda) \mathbf{S}_1\]
+\begin{equation}
 
-  2. inverted: e.g.:
+r_\textit{vanilla} \propto \widetilde{d}^2_\textit{vanilla} = \sum_{v = 1}^{V}(\widetilde{x}_{v(1)} - \widetilde{y}_{v(2)})^2
 
-  \[\mathbf{S}^{\textit{(shrnk.)}-1}_1\]
+\end{equation}
 
-  3. then averaged across runs and square-rooted
+For intuition, consider that the correlation is sensitive to the pattern "shape" (or, *angle* in vector space); scale (vector length) and mean differences (vector length along the unity line) are removed.
+Likewise, the euclidean distance is sensitive to "shape" --- but also to scale, and to mean differences.
+Removing scale and mean differences by z-score normalizing renders euclidean and correlation sensitive to the same information.
 
-  \[[(\mathbf{S}^{\textit{(shrnk.)}-1}_1 + \mathbf{S}^{\textit{(shrnk.)}-1}_2) / 2]^{1/2}\]
+#### cross-validated
+
+Standardized euclidean distance can be cross-validated in the same manner as euclidean's distance:
+
+\begin{equation}
+
+\widetilde{d}^2_\textit{cv} = \sum_{v = 1}^{V}(\widetilde{x}_{v(1)} - \widetilde{y}_{v(2)})(\widetilde{x}_{v(2)} - \widetilde{y}_{v(1)})
+
+\end{equation}
+
+
+## prewhitening
+
+Any of these measures can be computed on spatially 'prewhitened' patterns.
+
+### Description
+
+Spatial prewhitening is a normalization procedure that shrinks the patterns along dimensions of correlated noise (thus stretching, relatively, along less noisy ones).
+
+In the context of classification and Fisher's linear discriminant analysis, this whitening takes the form of normalizing by dividing patterns by the within-class (noise) covariance matrix, $\Sigma$ [(e.g.)](https://sthalles.github.io/fisher-linear-discriminant/), which is $V\times V$, and indicates how the class exemplars are distributed about their class centroids. (In LDA, all classess are assumed to share a common within-class covariance matrix.)
+Fisher proved that using this transform maximized the between-class variance (the difference vector between class centroids) relative to the within-class variance, and he actually did so nonparametrically [(ESLII, p 110)](https://www.google.com/url?sa=t&rct=j&q=&esrc=s&source=web&cd=1&ved=2ahUKEwii64jX76bpAhUKa80KHRQ7B4MQFjAAegQIAxAB&url=https%3A%2F%2Fweb.stanford.edu%2F~hastie%2FPapers%2FESLII.pdf&usg=AOvVaw25QCy16hNG1RTjwQm4qzz8).
+After applying this sphering transform, Euclidean distances between observations [become Mahalanobis distances](https://en.wikipedia.org/wiki/Mahalanobis_distance#Definition_and_properties).
+
+In the context of rapid event-related fMRI designs, problems in estimating $\Sigma$ arise.
+There aren't enough exemplars (pattern estimates) of each class (condition) to get a good estimate of the across-voxel correlation structure.
+But, a trick here is to use the residual timecourses from the GLM, not the within-class voxel-by-exemplar data matrices, to estimate $\Sigma$.
+Given that there are typically more TRs within a run than voxels within a parcel, estimating $\Sigma$ is now much more tractable.
+(Note that this is not the exact form of prewhitening derived by Fisher for LDA.
+But nevertheless, the *prewhitened cross-valided euclidean distance* is what Walther et al. refer to as the *cross-validated mahalanobis*.)
+
+
+### Estimation
+
+I followed procedures outlined in [Diedrichsen et al (2016)](https://arxiv.org/abs/1607.01371).
+
+Let $\mathbf{\epsilon}_r$ represent the matrix of residual timecourses for a given run $r$, parcel, and subject.
+I.e., $\mathbf{\epsilon}_1$ is $TR \times V$ and corresponds to run 1.
+The vertex-by-vertex covariance matrix of $\mathbf{\epsilon}_1$ is given by $\mathbf{\Sigma}_1 = \text{Cov}(\epsilon_1) = \mathbf{\epsilon}_1^T\mathbf{\epsilon}_1$.
+
+* to curb overfitting (and potentially aid inversion), $\Sigma_1$ is regularized by shrinking it towards an identity matrix by a factor $\lambda$, i.e.: $\mathbf{\Sigma}^*_1 = \lambda \mathbf{I} + (1 - \lambda) \mathbf{\Sigma}_1$. This is a common procedure that makes LDA perform much better in high-dimensional scenarios (see, e.g. [Guo, Hastie, Tibshirani, 2006](https://doi.org/10.1093/biostatistics/kxj035)).
   
-This forms the (regularized) __mahalanobis prewhitening matrix__, __W__, which is applied to each beta estimate:
+    * $\lambda$ can be estimated optimally [(Ledoit & Wolf, 2003)](https://repositori.upf.edu/bitstream/handle/10230/560/691.pdf); however for a first-pass analysis I used a healthy factor of $\lambda = 0.4$
 
-\[\mathbf{x}_1^{(\textit{prewhitened})} = \mathbf{x}_1\mathbf{W}\]
 
-* For these these analyses, I used a shrinkage factor of $\lambda = 0.4$ for all parcels and subjects.
+* then $\Sigma_1$ is inverted: e.g.: $\mathbf{\Sigma}^{*-1}_1$
 
-* Because I calculated cross-validated measures "by hand" (i.e., without using R's functions for euclidean distance and correlation),
-I omitted the (time-consuming) square-root step for these measures, and applied the squared whitening matrix,  $\mathbf{W}^2 = [(\mathbf{S}^{\textit{(shrnk.)}-1}_1 + \mathbf{S}^{\textit{(shrnk.)}-1}_2) / 2]$, directly to the patterns within the similarity calculation.
+
+* this was done for both runs, and matrices were averaged across run $\mathbf{\Sigma}^{*-1} = (\mathbf{\Sigma}^{*-1}_1 + \Sigma^{*-1}_2)/2$.
+This yields a single matrix $\Sigma^{*-1}$, to be applied to patterns of both runs.
+
+    * however, an alternative method, which may give a lower variance estimate of $\Sigma^{*-1}$, would be to concatenate $\epsilon_1$ and $\epsilon_2$ along the time dimension, $\epsilon = \big(\begin{smallmatrix}
+  \epsilon_1\\
+  \epsilon_2
+\end{smallmatrix}\big)$
+, then use the concatenated matrix to estimate a single covariance matrix $\Sigma = \text{Cov}(\epsilon)$ across all timepoints from run 1 and run 2.
+
+
+### Application
+
+
+Prewhitening can be incorporated into any of the estimation procedures outlined above.
 For example:
-\[d^2_\textit{cv, prewhitened}(x_1, y_2) = (\mathbf{x}_{1} - \mathbf{y}_{1})
-\mathbf{W}^2
-(\mathbf{x}_{2} - \mathbf{y}_{2})^T / N_\text{vert}\]
 
+\[r_\textit{vanilla, prw} = \text{cor}(x_{(1)}\mathbf{\Sigma}^{*-1/2}, y_{(2)}\mathbf{\Sigma}^{*-1/2})\]
 
-## Questions these analyses attempt to answer empirically
+\[
+d^2_\textit{vanilla, prw} = \mathbf{a} \mathbf{\Sigma}^{*-1} \mathbf{a}
+\]
 
-
-### 1. How does pre-whitening impact the sensitivity of RSA measures?
-
-* effect sizes: the magnitude of the Stroop RSA contrast
-  * non-crossvalidated measures: mean(PC50-I ~ PC50-I) - mean(PC50-I ~ PC50-C)
-  * crossvalidated measures: PC50-I ~ PC50-C > 0 (euclidean distance) or PC50-I ~ PC50-C < 1 (correlation)
-
-* effect sizes: the variability in the Stroop RSA contrast between subjects
-
-* effect sizes: the test-statistic for Stroop RSA contrast (sum-of-signed ranks)
-
-* significance / coverage of cortex: the set of parcels identified as significant
-
-* convergent validity: correlation between subject's Stroop RSA contrast for PC50 items and Bias items
-  * test would rely upon having measures that do not depend on amount of data.
-
-* noise ceilings: inter-subject consistency in similarity matrices (representational geometry)
-
-### 2. Was cross-validation successful at removing dependency on amount of data?
-
-* Compare Bias-I ~ PC50-C and Bias-C ~ PC50-I between baseline and proactive
-* dependency on amt of data: interaction, such that Bias-I is positive in proactive, Bias-C positive in baseline.
-* no dependency would show as no interaction
-
+\[
+d^2_\textit{cv, prw} = \mathbf{a}_{(1)} \mathbf{\Sigma}^{*-1} \mathbf{a}_{(2)}
+\]
 
 
 ```{r setup, include = FALSE}
