@@ -197,7 +197,7 @@ So:
 
 To make euclidean distance unbiased, the trick here is to perform the subtraction \textit{within-run}, then multiply the difference vectors \textit{between-run}.
 This ensures that the two terms in the multiplication (two `copies' of $\mathbf{a}$: $\mathbf{a}_{(1)}$ and $\mathbf{a}_{(2)}$) have independent errors.
-Because they are independent, \href{https://doi.org/10.1016/j.neuroimage.2015.12.012}{these error terms cancel in the multiplication}, meaning that the resulting product (distance) reflects only the true distance.
+Because they are independent, \href{https://www.biorxiv.org/content/10.1101/032391v2}{these error terms cancel in the multiplication}, meaning that the resulting product (distance) reflects only the true distance.
 
 \begin{align}
   d^2_\textit{cv} = \mathbf{a}_{(1)} \cdot \mathbf{a}_{(2)} = \sum_{v = 1}^V a_{v{(1)}}a_{v{(2)}} = \sum_{v = 1}^{V}(x_{v(1)} - y_{v(1)})(x_{v(2)} - y_{v(2)})
@@ -256,6 +256,9 @@ Fisher proved that using this transform maximized the between-class variance (th
 {https://www.google.com/url?sa=t&rct=j&q=&esrc=s&source=web&cd=1&ved=2ahUKEwii64jX76bpAhUKa80KHRQ7B4MQFjAAegQIAxAB&url=https%3A%2F%2Fweb.stanford.edu%2F~hastie%2FPapers%2FESLII.pdf&usg=AOvVaw25QCy16hNG1RTjwQm4qzz8}
 {ESLII, p 110}.
 After applying this transform, Euclidean distances between observations \href{https://en.wikipedia.org/wiki/Mahalanobis_distance#Definition_and_properties}{become Mahalanobis distances}.
+The decision rule in Fisher's LDA is based on mahalanobis distances: a test observation is assigned to the class for which it has the smallest mahalanobis distance from centroid; e.g., \href
+{https://www.google.com/url?sa=t&rct=j&q=&esrc=s&source=web&cd=1&ved=2ahUKEwii64jX76bpAhUKa80KHRQ7B4MQFjAAegQIAxAB&url=https%3A%2F%2Fweb.stanford.edu%2F~hastie%2FPapers%2FESLII.pdf&usg=AOvVaw25QCy16hNG1RTjwQm4qzz8}
+{ESLII, p 108, eq 4.9}.
 
 \subsection*{intuition}
 
@@ -274,7 +277,7 @@ There aren't enough exemplars (pattern estimates) of each class (condition) to g
 But, a trick here is to use the residual timecourses from the GLM, not the within-class voxel-by-exemplar data matrices, to estimate $\Sigma$ \href{https://doi.org/10.1016/j.neuroimage.2010.05.051}{(e.g., Misaki et al., 2010)}.
 Given that there are typically more TRs within a run than voxels within a parcel, estimating $\Sigma$ is now much more tractable.
 (Note that this is not the exact form of prewhitening derived by Fisher for LDA.
-But nevertheless, the \textit{prewhitened cross-valided euclidean distance} is what \href{https://doi.org/10.1016/j.neuroimage.2015.12.012}{Walther et al. (2016)} refer to as the \textit{cross-validated mahalanobis}.)
+But nevertheless, the \textit{prewhitened cross-validated euclidean distance} is what \href{https://doi.org/10.1016/j.neuroimage.2015.12.012}{Walther et al. (2016)} refer to as the \textit{cross-validated mahalanobis}.)
 
 To perform prewhitening in my analyses, I followed procedures outlined in \href{https://arxiv.org/abs/1607.01371}{Diedrichsen et al (2016)}.
 
@@ -283,9 +286,9 @@ I.e., $\mathbf{\epsilon}_1$ is $TR \times V$ and corresponds to run 1.
 The vertex-by-vertex covariance matrix of $\mathbf{\epsilon}_1$ is given by $\mathbf{\Sigma}_1 = \text{Cov}(\epsilon_1) = \mathbf{\epsilon}_1^T\mathbf{\epsilon}_1$.
 
 \begin{itemize}
-  \item to curb overfitting (and potentially aid inversion), $\Sigma_1$ is regularized by shrinking it towards an identity matrix by a factor $\lambda$, i.e.: 
-    $\mathbf{\Sigma}^*_1 = \lambda \mathbf{I} + (1 - \lambda) \mathbf{\Sigma}_1$.
-    This is a common procedure that makes LDA perform much better in high-dimensional scenarios (see, e.g. \href{https://doi.org/10.1093/biostatistics/kxj035}{Guo, Hastie, Tibshirani, 2006}]).
+  \item to curb overfitting (and potentially enable inversion), $\Sigma_1$ is regularized by shrinking it towards a diagonal matrix, \textbf{D} by a factor $\lambda$, i.e.: 
+    $\mathbf{\Sigma}^*_1 = \lambda \mathbf{D} + (1 - \lambda) \mathbf{\Sigma}_1$.
+    Regularization of $\mathbf{\Sigma}$ is a common procedure for LDA, which greatly aids performance in high-dimensional scenarios (see, e.g. \href{https://doi.org/10.1093/biostatistics/kxj035}{Guo, Hastie, Tibshirani, 2006}]).
   \item $\lambda$ can be estimated optimally \href{https://repositori.upf.edu/bitstream/handle/10230/560/691.pdf}{(Ledoit \& Wolf, 2003)}.
     However, for a first-pass analysis, I used a healthy factor of $\lambda = 0.4$
   \item Once estimated, $\Sigma_1$ is inverted, e.g. $\mathbf{\Sigma}^{*-1}_1$, to perform the matrix division.
