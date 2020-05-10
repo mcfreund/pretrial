@@ -42,6 +42,21 @@ Below, these things are described and references linked.
 
 ## measures of similarity and "methods of estimation"
 
+### A general note.
+
+All of these measures --- correlation, euclidean, standardized euclidean --- involve a __quadratic form__, a term that is multiplied to itself.
+In correlation, for example, this form is the variance of each measure: $Var(x) = Cov(x, x) = E[(x - \bar{x})^2]$.
+In euclidean distance, this form is the square of a difference vector: $(\mathbf{x} - \mathbf{y}) \cdot (\mathbf{x} - \mathbf{y}) = (\mathbf{x} - \mathbf{y})^2$
+
+Within the context of classical test theory, a measure $x$ is composed of true score and error components.
+Because these similarity measures involve mutliplying $x$ to itself, both the true score and error components are squared, and both contribute to the expected value of the estimate.
+
+"Cross-validated" versions of these similarity measures all use the same trick to make them unbiased --- i.e., insensitive, in terms of expected value, to the error component.
+This trick is to "swap out" one of these $x$ terms within the quadratic form with an independent "copy" of itself.
+In cross-validated correlation, for example, the quadratic form for $Cov(x, x)$ is substituted with two independent copies of $x$, obtained from different scanning runs, $Cov(x_{(1)}, x_{(2)})$.
+This swapping out creates an unbiased measure because the error terms cancel out (because of independence; see [Alink et al, 2015](https://www.biorxiv.org/content/10.1101/032391v2) for the algebra).
+
+
 ### linear correlation
 
 #### vanilla method
@@ -83,7 +98,7 @@ Estimating across runs gives robustness to potential design artifacts stemming f
 To make the linear correlation unbiased, the [Spearman's correction for attenuation](https://en.wikipedia.org/wiki/Correction_for_attenuation) is applied.
 
 The idea is that the maximum observable correlation between $x_{(1)}$ and $y_{(2)}$ is bounded by the (root product of their) reliabilities (lower reliability, lower correlation).
-So, the observed correlation values are scaled by their maximum value, which is a function of their reliability.
+So, to correct for measurement error, the observed correlation values are scaled by their reliability.
 Here, reliability is estimated as the cross-run covariance.
 
 Essentially, this amounts to swapping one out of each of the measures in the denominator of __(1)__, $x_{(1)}$ and  $y_{(2)}$, with an independent 'copy' of itself, $x_{(2)}$ and $y_{(1)}$:
@@ -187,11 +202,11 @@ Any of these measures can be computed on spatially 'prewhitened' patterns.
 
 Spatial prewhitening is a normalization procedure that shrinks the patterns along dimensions of correlated noise (thus stretching, relatively, along less noisy ones).
 
-In the context of classification and Fisher's linear discriminant analysis, this whitening takes the form of normalizing by dividing patterns by the within-class (noise) covariance matrix, $\Sigma$ [(e.g.)](https://sthalles.github.io/fisher-linear-discriminant/), which is $V\times V$, and indicates how the class exemplars are distributed about their class centroids. (In LDA, all classess are assumed to share a common within-class covariance matrix.)
+In the context of classification and Fisher's linear discriminant analysis, this whitening takes the form of normalizing by dividing patterns by the within-class (noise) covariance matrix, $\Sigma$ [(e.g.)](https://sthalles.github.io/fisher-linear-discriminant/) and indicates how the class exemplars are distributed about their class centroids. (In LDA, all classess are assumed to share a common within-class covariance matrix.)
 Fisher proved that using this transform maximized the between-class variance (the difference vector between class centroids) relative to the within-class variance, and he actually did so nonparametrically [(ESLII, p 110)](https://www.google.com/url?sa=t&rct=j&q=&esrc=s&source=web&cd=1&ved=2ahUKEwii64jX76bpAhUKa80KHRQ7B4MQFjAAegQIAxAB&url=https%3A%2F%2Fweb.stanford.edu%2F~hastie%2FPapers%2FESLII.pdf&usg=AOvVaw25QCy16hNG1RTjwQm4qzz8).
 After applying this sphering transform, Euclidean distances between observations [become Mahalanobis distances](https://en.wikipedia.org/wiki/Mahalanobis_distance#Definition_and_properties).
 
-In the context of rapid event-related fMRI designs, problems in estimating $\Sigma$ arise.
+In the context of rapid event-related fMRI designs, problems arise in estimating $\Sigma$, which has dimension $V \times V$.
 There aren't enough exemplars (pattern estimates) of each class (condition) to get a good estimate of the across-voxel correlation structure.
 But, a trick here is to use the residual timecourses from the GLM, not the within-class voxel-by-exemplar data matrices, to estimate $\Sigma$.
 Given that there are typically more TRs within a run than voxels within a parcel, estimating $\Sigma$ is now much more tractable.
@@ -212,7 +227,7 @@ The vertex-by-vertex covariance matrix of $\mathbf{\epsilon}_1$ is given by $\ma
     * $\lambda$ can be estimated optimally [(Ledoit & Wolf, 2003)](https://repositori.upf.edu/bitstream/handle/10230/560/691.pdf); however for a first-pass analysis I used a healthy factor of $\lambda = 0.4$
 
 
-* then $\Sigma_1$ is inverted: e.g.: $\mathbf{\Sigma}^{*-1}_1$
+* then $\Sigma_1$ is inverted, e.g. $\mathbf{\Sigma}^{*-1}_1$, to perform the matrix division.
 
 
 * this was done for both runs, and matrices were averaged across run $\mathbf{\Sigma}^{*-1} = (\mathbf{\Sigma}^{*-1}_1 + \Sigma^{*-1}_2)/2$.
@@ -223,6 +238,7 @@ This yields a single matrix $\Sigma^{*-1}$, to be applied to patterns of both ru
   \epsilon_2
 \end{smallmatrix}\big)$
 , then use the concatenated matrix to estimate a single covariance matrix $\Sigma = \text{Cov}(\epsilon)$ across all timepoints from run 1 and run 2.
+I'll leave this for future exploration.
 
 
 ### Application
