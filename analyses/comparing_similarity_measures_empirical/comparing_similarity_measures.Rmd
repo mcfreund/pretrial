@@ -179,9 +179,9 @@ r_\textit{vanilla} \propto \widetilde{d}^2_\textit{vanilla} = \sum_{v = 1}^{V}(\
 
 \end{equation}
 
-For intuition, consider that the correlation is sensitive to the pattern "shape" (or, *angle* in vector space); scale (vector length) and mean differences (vector length along the unity line) are removed.
+For intuition, consider that the correlation is sensitive to the pattern "shape" (or, *angle* in vector space); scale (vector length) and mean differences (vector length along the unity line), however, are removed.
 Likewise, the euclidean distance is sensitive to "shape" --- but also to scale, and to mean differences.
-Removing scale and mean differences by z-score normalizing renders euclidean and correlation sensitive to the same information.
+Removing scale and mean differences by z-score normalizing renders euclidean and correlation sensitive to idenditcal information.
 
 #### cross-validated
 
@@ -189,7 +189,7 @@ Standardized euclidean distance can be cross-validated in the same manner as euc
 
 \begin{equation}
 
-\widetilde{d}^2_\textit{cv} = \sum_{v = 1}^{V}(\widetilde{x}_{v(1)} - \widetilde{y}_{v(2)})(\widetilde{x}_{v(2)} - \widetilde{y}_{v(1)})
+\widetilde{d}^2_\textit{cv} = \sum_{v = 1}^{V}(\widetilde{x}_{v(1)} - \widetilde{y}_{v(1)})(\widetilde{x}_{v(2)} - \widetilde{y}_{v(2)})
 
 \end{equation}
 
