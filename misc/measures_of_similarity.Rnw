@@ -195,20 +195,21 @@ If two conditions have \textit{consistently different} pattern `shapes' across s
 
 Any of these measures can be computed on spatially `prewhitened' patterns.
 
-\subsection*{description}
+\subsection*{background: LDA and mahalanobis distances}
 
 Spatial prewhitening is a normalization procedure that shrinks the patterns along dimensions of strong noise variance within high-D voxel space (thus stretching, relatively, along less noisy ones).
 
-In the context of classification and Fisher's linear discriminant analysis, this whitening takes the form of normalizing by dividing patterns by the within-class (noise) covariance matrix, $\Sigma$ \href{https://sthalles.github.io/fisher-linear-discriminant/}{(e.g.)} and indicates how the class exemplars are distributed about their class centroids.
+In the context of classification and Fisher's linear discriminant analysis, this whitening takes the form of normalizing by dividing patterns by the within-class (noise) covariance matrix, $\mathbf{\Sigma}$ \href{https://sthalles.github.io/fisher-linear-discriminant/}{(e.g.)}.
+$\mathbf{\Sigma}$ indicates how the class exemplars are distributed about their class centroids.
 (In LDA, all classess are assumed to share a common within-class covariance matrix.)
-Fisher proved that using this transform maximized the between-class variance (the difference vector between class centroids) relative to the within-class variance, and he actually did so nonparametrically
+Fisher proved that using this transform maximized the between-class variance (the length of the difference vector between class centroids) relative to the within-class variance, and he actually did so nonparametrically
 \href
 {https://www.google.com/url?sa=t&rct=j&q=&esrc=s&source=web&cd=1&ved=2ahUKEwii64jX76bpAhUKa80KHRQ7B4MQFjAAegQIAxAB&url=https%3A%2F%2Fweb.stanford.edu%2F~hastie%2FPapers%2FESLII.pdf&usg=AOvVaw25QCy16hNG1RTjwQm4qzz8}
-{ESLII, p 110}.
+{(ESLII, p 110)}.
 After applying this transform, Euclidean distances between observations \href{https://en.wikipedia.org/wiki/Mahalanobis_distance#Definition_and_properties}{become Mahalanobis distances}.
-The decision rule in Fisher's LDA is based on mahalanobis distances: a test observation is assigned to the class for which it has the smallest mahalanobis distance from centroid; e.g., \href
+The decision rule in Fisher's LDA is based on mahalanobis distances: a test observation is assigned to the class for which it has the smallest mahalanobis distance from centroid \href
 {https://www.google.com/url?sa=t&rct=j&q=&esrc=s&source=web&cd=1&ved=2ahUKEwii64jX76bpAhUKa80KHRQ7B4MQFjAAegQIAxAB&url=https%3A%2F%2Fweb.stanford.edu%2F~hastie%2FPapers%2FESLII.pdf&usg=AOvVaw25QCy16hNG1RTjwQm4qzz8}
-{ESLII, p 108, eq 4.9}.
+{(see, e.g., ESLII, p 108, eq 4.9)}.
 
 \subsection*{intuition}
 
@@ -222,10 +223,10 @@ The Fisher LDA whitening transform makes the noise structure spherical.
 
 \subsection*{estimation}
 
-In the context of rapid event-related fMRI designs, problems arise in estimating $\Sigma$, which has dimension $V \times V$.
+In the context of rapid event-related fMRI designs, problems arise in estimating $\mathbf{\Sigma}$, which has dimension $V \times V$.
 There aren't enough exemplars (pattern estimates) of each class (condition) to get a good estimate of the across-voxel correlation structure.
-But, a trick here is to use the residual timecourses from the GLM, not the within-class voxel-by-exemplar data matrices, to estimate $\Sigma$ \href{https://doi.org/10.1016/j.neuroimage.2010.05.051}{(e.g., Misaki et al., 2010)}.
-Given that there are typically more TRs within a run than voxels within a parcel, estimating $\Sigma$ is now much more tractable.
+But, a trick here is to use the residual timecourses from the GLM, not the within-class voxel-by-exemplar data matrices, to estimate $\mathbf{\Sigma}$ \href{https://doi.org/10.1016/j.neuroimage.2010.05.051}{(e.g., Misaki et al., 2010)}.
+Given that there are typically more TRs within a run than voxels within a parcel, estimating $\mathbf{\Sigma}$ is now much more tractable.
 (Note that this is not the exact form of prewhitening derived by Fisher for LDA.
 But nevertheless, the \textit{prewhitened cross-validated euclidean distance} is what \href{https://doi.org/10.1016/j.neuroimage.2015.12.012}{Walther et al. (2016)} refer to as the \textit{cross-validated mahalanobis}.)
 
@@ -236,21 +237,21 @@ I.e., $\mathbf{\epsilon}_1$ is $TR \times V$ and corresponds to run 1.
 The vertex-by-vertex covariance matrix of $\mathbf{\epsilon}_1$ is given by $\mathbf{\Sigma}_1 = \text{Cov}(\epsilon_1) = \mathbf{\epsilon}_1^T\mathbf{\epsilon}_1$.
 
 \begin{itemize}
-  \item to curb overfitting (and potentially enable inversion), $\Sigma_1$ is regularized by shrinking it towards a diagonal matrix, \textbf{D} by a factor $\lambda$, i.e.: 
+  \item to curb overfitting (and potentially enable inversion), $\mathbf{\Sigma}_1$ is regularized by shrinking it towards a diagonal matrix, \textbf{D} by a factor $\lambda$, i.e.: 
     $\mathbf{\Sigma}^*_1 = \lambda \mathbf{D} + (1 - \lambda) \mathbf{\Sigma}_1$.
-    Regularization of $\mathbf{\Sigma}$ is a common procedure for LDA, which greatly boosts performance in high-dimensional scenarios (see, e.g. \href{https://doi.org/10.1093/biostatistics/kxj035}{Guo, Hastie, Tibshirani, 2006}]).
+    Regularization of $\mathbf{\Sigma}$ is a common procedure for LDA, which greatly aids performance in high-dimensional scenarios (see, e.g. \href{https://doi.org/10.1093/biostatistics/kxj035}{Guo, Hastie, Tibshirani, 2006}]).
   \item $\lambda$ can be estimated optimally \href{https://repositori.upf.edu/bitstream/handle/10230/560/691.pdf}{(Ledoit \& Wolf, 2003)}.
     However, for a first-pass analysis, I used a healthy factor of $\lambda = 0.4$
-  \item Once estimated, $\Sigma_1$ is inverted, e.g. $\mathbf{\Sigma}^{*-1}_1$, to perform the matrix division.
+  \item Once estimated, $\mathbf{\Sigma}_1$ is inverted, e.g. $\mathbf{\Sigma}^{*-1}_1$, to perform the matrix division.
   \item This estimation and inversion was done separately for both runs. Matrices were then averaged across run
-    $\mathbf{\Sigma}^{*-1} = (\mathbf{\Sigma}^{*-1}_1 + \Sigma^{*-1}_2)/2$, yielding a single matrix $\Sigma^{*-1}$, to be applied to patterns of both runs.
+    $\mathbf{\Sigma}^{*-1} = (\mathbf{\Sigma}^{*-1}_1 + \mathbf{\Sigma}^{*-1}_2)/2$, yielding a single matrix $\mathbf{\Sigma}^{*-1}$, to be applied to patterns of both runs.
     \begin{itemize}
-      \item however, an alternative method, which may give a lower variance estimate of $\Sigma^{*-1}$, would be to concatenate $\epsilon_1$ and $\epsilon_2$ along the time dimension,
+      \item however, an alternative method, which may give a lower variance estimate of $\mathbf{\Sigma}^{*-1}$, would be to concatenate $\epsilon_1$ and $\epsilon_2$ along the time dimension,
         $\epsilon = \big(\begin{smallmatrix}
         \epsilon_1\\
         \epsilon_2
         \end{smallmatrix}\big)$,
-        then use the concatenated matrix to estimate a single covariance matrix $\Sigma = \text{Cov}(\epsilon)$ across all timepoints from run 1 and run 2.
+        then use the concatenated matrix to estimate a single covariance matrix $\mathbf{\Sigma} = \text{Cov}(\epsilon)$ across all timepoints from run 1 and run 2.
         I'll leave this for future exploration.
     \end{itemize}
 \end{itemize}
