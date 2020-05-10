@@ -50,8 +50,10 @@ In euclidean distance, this form is the square of a difference vector: $(\mathbf
 
 Within the context of classical test theory, a measure $x$ is composed of true score and error components.
 Because these similarity measures involve mutliplying $x$ to itself, both the true score and error components are squared, and both contribute to the expected value of the estimate.
+This is what makes these similarity measures 'biased'.
 
-"Cross-validated" versions of these similarity measures all use the same trick to make them unbiased --- i.e., insensitive, in terms of expected value, to the error component.
+"Cross-validated" versions of these measures are unbiased: insensitive, in terms of expected value, to the error component.
+These measures all use the same 'trick' to make them unbiased.
 This trick is to "swap out" one of these $x$ terms within the quadratic form with an independent "copy" of itself.
 In cross-validated correlation, for example, the quadratic form for $Cov(x, x)$ is substituted with two independent copies of $x$, obtained from different scanning runs, $Cov(x_{(1)}, x_{(2)})$.
 This swapping out creates an unbiased measure because the error terms cancel out (because of independence; see [Alink et al, 2015](https://www.biorxiv.org/content/10.1101/032391v2) for the algebra).

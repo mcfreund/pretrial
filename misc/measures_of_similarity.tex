@@ -1,0 +1,318 @@
+\documentclass{article}\usepackage[]{graphicx}\usepackage[]{color}
+% maxwidth is the original width if it is less than linewidth
+% otherwise use linewidth (to make sure the graphics do not exceed the margin)
+\makeatletter
+\def\maxwidth{ %
+  \ifdim\Gin@nat@width>\linewidth
+    \linewidth
+  \else
+    \Gin@nat@width
+  \fi
+}
+\makeatother
+
+\definecolor{fgcolor}{rgb}{0.345, 0.345, 0.345}
+\newcommand{\hlnum}[1]{\textcolor[rgb]{0.686,0.059,0.569}{#1}}%
+\newcommand{\hlstr}[1]{\textcolor[rgb]{0.192,0.494,0.8}{#1}}%
+\newcommand{\hlcom}[1]{\textcolor[rgb]{0.678,0.584,0.686}{\textit{#1}}}%
+\newcommand{\hlopt}[1]{\textcolor[rgb]{0,0,0}{#1}}%
+\newcommand{\hlstd}[1]{\textcolor[rgb]{0.345,0.345,0.345}{#1}}%
+\newcommand{\hlkwa}[1]{\textcolor[rgb]{0.161,0.373,0.58}{\textbf{#1}}}%
+\newcommand{\hlkwb}[1]{\textcolor[rgb]{0.69,0.353,0.396}{#1}}%
+\newcommand{\hlkwc}[1]{\textcolor[rgb]{0.333,0.667,0.333}{#1}}%
+\newcommand{\hlkwd}[1]{\textcolor[rgb]{0.737,0.353,0.396}{\textbf{#1}}}%
+\let\hlipl\hlkwb
+
+\usepackage{framed}
+\makeatletter
+\newenvironment{kframe}{%
+ \def\at@end@of@kframe{}%
+ \ifinner\ifhmode%
+  \def\at@end@of@kframe{\end{minipage}}%
+  \begin{minipage}{\columnwidth}%
+ \fi\fi%
+ \def\FrameCommand##1{\hskip\@totalleftmargin \hskip-\fboxsep
+ \colorbox{shadecolor}{##1}\hskip-\fboxsep
+     % There is no \\@totalrightmargin, so:
+     \hskip-\linewidth \hskip-\@totalleftmargin \hskip\columnwidth}%
+ \MakeFramed {\advance\hsize-\width
+   \@totalleftmargin\z@ \linewidth\hsize
+   \@setminipage}}%
+ {\par\unskip\endMakeFramed%
+ \at@end@of@kframe}
+\makeatother
+
+\definecolor{shadecolor}{rgb}{.97, .97, .97}
+\definecolor{messagecolor}{rgb}{0, 0, 0}
+\definecolor{warningcolor}{rgb}{1, 0, 1}
+\definecolor{errorcolor}{rgb}{1, 0, 0}
+\newenvironment{knitrout}{}{} % an empty environment to be redefined in TeX
+
+\usepackage{alltt}
+
+\usepackage{amsmath,amssymb}
+\usepackage[margin =0.51in]{geometry}
+\usepackage{enumitem}
+\usepackage{parskip}
+\usepackage{hyperref}
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+\begin{document}
+
+\title{Measures of pattern similarity: cross-validation and prewhitening}
+\author{mike freund}
+\date{\today}
+\maketitle
+
+
+In analyses within this repo I have considered 12 different forms of similarity.
+
+\begin{itemize}
+
+  \item 3 \textbf{measures} of similarity
+  \begin{itemize}
+      \item linear \textbf{correlation}
+      \item \textbf{euclidean} distance
+      \item  \textbf{standardized euclidean} distance
+  \end{itemize}
+  
+  \item 2 \textbf{methods} of estimation
+  \begin{itemize} 
+    \item \textbf{vanilla RSA}: assessing similarity of patterns across scanning runs
+    \item \textbf{``cross-validated'' RSA}: tweaking cross-run estimation procedure so that measures become \textit{unbiased}
+  \end{itemize}
+  
+  \item 2 \textbf{normalizing} transforms
+  \begin{itemize} 
+    \item \textbf{``raw''}, or un-normalized
+    \item spatially \textbf{prewhitened}, or ``multivariate noise normalized''
+  \end{itemize}
+  
+\end{itemize}
+
+Below, these things are described and references linked.
+
+
+\section*{measures of similarity and ``methods of estimation''}
+
+\subsection*{A general note about `cross-validation' and unbiasedness.}
+
+All of these measures --- correlation, euclidean, standardized euclidean --- involve a \textit{quadratic form}, that is, a term that is multiplied to itself.
+In correlation, for example, this form is the variance of each measure: $\text{Var}(x) = \text{Cov}(x, x) = \mathbb{E}[(x - \bar{x})^2]$.
+In euclidean distance, this form is the square of a difference vector: $(\mathbf{x} - \mathbf{y}) \cdot (\mathbf{x} - \mathbf{y}) = (\mathbf{x} - \mathbf{y})^2$
+
+Within the context of classical test theory, a measure $x$ is composed of true score and error components.
+Because these similarity measures involve mutliplying $x$ to itself, both the true score and error components are squared, and both contribute to the expected value of the estimate.
+This is what makes these similarity measures `biased'.
+
+``Cross-validated'' versions of these measures are unbiased: insensitive, in terms of expected value, to the error component.
+To make each of these measures unbiased, the same `trick' is used.
+This trick is to ``swap out'' one of these $x$ terms within the quadratic form with an independent ``copy'' of itself.
+In cross-validated correlation, for example, the quadratic form for $\text{Cov}(x, x)$ is substituted with two independent copies of $x$, obtained from different scanning runs: $\text{Cov}(x_{(1)}, x_{(2)})$.
+This swapping out creates an unbiased measure because the error terms cancel out (because of independence; see \href{https://www.biorxiv.org/content/10.1101/032391v2}{Alink et al, 2015} for the algebra).
+
+
+\subsection*{linear correlation}
+
+\subsubsection*{vanilla method}
+
+The correlation between two pattern vectors $x, y$ can be written
+
+\begin{align*}
+  r_\textit{vanilla} = \text{cor}(x, y) = \frac
+  {\text{Cov}(x, y)}
+  {\sqrt{\text{Var}(x)\text{Var}(y)}}
+\end{align*}
+
+i.e., the covariance of a measure standardized by the (rooted product of the) variances.
+
+This is equivalent to writing
+
+\begin{align*}
+  r_\textit{vanilla} = \frac{\text{Cov}(x, y)}{\sqrt{\text{Cov}(x, x)\text{Cov}(y, y)}}
+\end{align*}
+
+because the covariance of a measure with itself is the variance.
+
+In the context of ``vanilla'' / cross-run RSA, the correlation of $x$ and $y$  is estimated \textit{across scanning runs} --- e.g., $x$ from run 1 and $y$ from run 2:
+
+\begin{align}
+  r_\textit{vanilla} = \text{cor}(x_{(1)}, y_{(2)}) = 
+  \frac{\text{Cov}(x_{(1)}, y_{(2)})}
+  {\sqrt{\text{Cov}(x_{(1)}, x_{(1)})\text{Cov}(y_{(2)}, y_{(2)})}}
+\end{align}
+
+Estimating across runs gives robustness to potential design artifacts stemming from temporal autocorrelation (e.g., \href{https://www.biorxiv.org/content/10.1101/032391v2}{Alink et al, 2015}, \href{}{Cai et al., 2019}.
+
+% Because this yields two values --- $cor(x_1, y_2)$ and $cor(x_2, y_1)$ --- these are averaged together.
+
+\subsubsection*{cross-validated method}
+
+To make the linear correlation unbiased, the \href{https://en.wikipedia.org/wiki/Correction_for_attenuation}{Spearman's correction for attenuation} is applied.
+
+The idea is that the maximum observable correlation between $x_{(1)}$ and $y_{(2)}$ is bounded by the (root product of their) reliabilities: lower reliability, lower observed correlation.
+So, to correct for measurement error, the observed correlation values are scaled by their (root product of their) reliabilities.
+Here, reliability is estimated as the cross-run covariance.
+
+Essentially, this amounts to swapping one out of each of the measures in the denominator of Eq. (1), $x_{(1)}$ and  $y_{(2)}$, with an independent `copy' of itself, $x_{(2)}$ and $y_{(1)}$:
+
+\begin{align}
+  r_\textit{cv} = \frac
+  {\text{Cov}(x_{(1)}, y_{(1)})}
+  {\sqrt{\text{Cov}(x_{(1)}, x_{(2)})\text{Cov}(y_{(1)}, y_{(2)})}}
+\end{align}
+
+
+\begin{itemize}
+  \item see Appendix of \href{https://www.biorxiv.org/content/10.1101/032391v2}{Alink et al, 2015} for expanded definition of cross-run correlation.
+  \item because a covariance between independent measurements can be $\leq 0$, the denominator of the cross-validated correlation can be undefined (because of the root).
+  \item this property is problematic for this measure, as even moderate amounts of noise can make this measure unstable and cause `missing' data.
+  \item I included the measure in my analyses for completeness but it was indeed very unstable.
+\end{itemize}
+
+
+\subsection*{euclidean distance}
+
+\subsubsection*{vanilla}
+
+The vanilla / cross-run squared euclidean distance can be written
+
+\begin{align*}
+  d^2_\textit{vanilla} = \sum_{v = 1}^{V}(x_{v(1)} - y_{v(2)})^2
+\end{align*}
+
+i.e., the sum of squared differences between voxels $v$ in $1, \dots V$ in pattern $x$ from run 1 and pattern $y$ from run 2.
+
+The subtraction operation above can also be thought of in vector form, where $x$ and $y$ are vectors $\mathbf{x}$ and $\mathbf{y}$, and $\mathbf{a} = \mathbf{x} - \mathbf{y}$ is the \textbf{difference vector}, or vector
+\href{https://www.google.com/search?q=vector+subtraction&client=firefox-b-1-d&sxsrf=ALeKk00syNVDPLbGdMF_spS_wgfJXqp50A:1589025736959&source=lnms&tbm=isch&sa=X&ved=2ahUKEwih_9uU3qbpAhVGK80KHT5hB4EQ_AUoAXoECA4QAw&biw=2400&bih=1185#imgrc=Tjt-W0VN7s-a4M}{pointing from $\mathbf{y}$ to $\mathbf{x}$}.
+The squared euclidean distance can then be thought of as the squared \textit{length} of this difference vector.
+(The squared length of a vector is just a vector multiplied by itself.)
+So:
+
+\begin{align}
+  d^2_\textit{vanilla} = \mathbf{a}^2 = \mathbf{a} \cdot \mathbf{a} = \sum_{v = 1}^V a_v^2 =  \sum_{v = 1}^{V}(x_{v(1)} - y_{v(2)})^2
+\end{align}
+
+
+\subsubsection*{cross-validated}
+
+To make euclidean distance unbiased, the trick here is to perform the subtraction \textit{within-run}, then multiply the difference vectors \textit{between-run}.
+This ensures that the two terms in the multiplication (two `copies' of $\mathbf{a}$: $\mathbf{a}_{(1)}$ and $\mathbf{a}_{(2)}$) have independent errors.
+Because they are independent, \href{https://doi.org/10.1016/j.neuroimage.2015.12.012}{these error terms cancel in the multiplication}, meaning that the resulting product (distance) reflects only the true distance.
+
+\begin{align}
+  d^2_\textit{cv} = \mathbf{a}_{(1)} \cdot \mathbf{a}_{(2)} = \sum_{v = 1}^V a_{v{(1)}}a_{v{(2)}} = \sum_{v = 1}^{V}(x_{v(1)} - y_{v(1)})(x_{v(2)} - y_{v(2)})
+\end{align}
+
+If there is no consistent difference between $x$ and $y$ across scanning runs, then the expected value of $d^2_\textit{cv}$ is zero.
+(Note that, because $d^2_\textit{cv}$ can be negative, it is not square-rooted, but left as a squared euclidean distance.)
+
+
+\subsection*{standardized euclidean distance}
+
+\subsubsection*{vanilla}
+
+If the patterns $x$ and $y$ are z-score standardized, the squared euclidean's distance between them will be \href{https://arxiv.org/abs/1601.02213}{equivalent}, within a scaling factor, to linear correlation.
+
+Let the tilde denote this standardization, e.g.,
+\[
+\widetilde{x}_{v(1)} =
+\frac{x_{v(1)} - \bar{x}_{v(1)}}
+{\text{sd}(x_{v(1)})}
+\]
+
+so that
+
+\begin{equation}
+  r_\textit{vanilla} \propto \widetilde{d}^2_\textit{vanilla} = \sum_{v = 1}^{V}(\widetilde{x}_{v(1)} - \widetilde{y}_{v(2)})^2
+\end{equation}
+
+For intuition, consider that the correlation is sensitive to the pattern ``shape'' (or, in vector space, the \textit{angle}); scale (vector length) and mean differences (vector length along the unity line), however, are removed.
+Likewise, the euclidean distance is sensitive to ``shape'' --- but also to scale, and to mean differences.
+Removing scale and mean differences by z-score normalizing renders euclidean and correlation sensitive to idenditcal information.
+
+\subsubsection*{cross-validated}
+
+Standardized euclidean distance can be cross-validated in the same manner as euclidean's distance:
+
+\begin{equation}
+  \widetilde{d}^2_\textit{cv} = \sum_{v = 1}^{V}(\widetilde{x}_{v(1)} - \widetilde{y}_{v(1)})(\widetilde{x}_{v(2)} - \widetilde{y}_{v(2)})
+\end{equation}
+
+Perhaps an intuitive way of thinking about the cross-validated standardized euclidean is that it indicates how correlated the difference between two conditions was across scanning runs.
+If two conditions have \textit{consistently different} pattern `shapes' across scanning runs, they will have $\widetilde{d}^2_\textit{cv} > 0$.
+
+\section*{prewhitening}
+
+Any of these measures can be computed on spatially `prewhitened' patterns.
+
+\subsection*{description}
+
+Spatial prewhitening is a normalization procedure that shrinks the patterns along dimensions of strong noise variance within high-D voxel space (thus stretching, relatively, along less noisy ones).
+
+In the context of classification and Fisher's linear discriminant analysis, this whitening takes the form of normalizing by dividing patterns by the within-class (noise) covariance matrix, $\Sigma$ \href{https://sthalles.github.io/fisher-linear-discriminant/}{(e.g.)} and indicates how the class exemplars are distributed about their class centroids.
+(In LDA, all classess are assumed to share a common within-class covariance matrix.)
+Fisher proved that using this transform maximized the between-class variance (the difference vector between class centroids) relative to the within-class variance, and he actually did so nonparametrically
+\href
+{https://www.google.com/url?sa=t&rct=j&q=&esrc=s&source=web&cd=1&ved=2ahUKEwii64jX76bpAhUKa80KHRQ7B4MQFjAAegQIAxAB&url=https%3A%2F%2Fweb.stanford.edu%2F~hastie%2FPapers%2FESLII.pdf&usg=AOvVaw25QCy16hNG1RTjwQm4qzz8}
+{ESLII, p 110}.
+After applying this transform, Euclidean distances between observations \href{https://en.wikipedia.org/wiki/Mahalanobis_distance#Definition_and_properties}{become Mahalanobis distances}.
+
+\subsection*{intuition}
+
+One way of thinking about this whitening transform is as a \textit{sphering}.
+For a given class (experimental condition), trial-level patterns are distributed about their class centriod (mean pattern) within high-dimensional voxel space.
+This cloud of points is the distribution of noise.
+It has some shape.
+If the noise is \textit{uncorrelated} across voxels, and all voxels had equal variance, the shape would be a (hyper)sphere.
+If the noise was correlated across voxels, the shape would be a non-spherical ellipsoid.
+The Fisher LDA whitening transform makes the noise structure spherical.
+
+\subsection*{estimation}
+
+In the context of rapid event-related fMRI designs, problems arise in estimating $\Sigma$, which has dimension $V \times V$.
+There aren't enough exemplars (pattern estimates) of each class (condition) to get a good estimate of the across-voxel correlation structure.
+But, a trick here is to use the residual timecourses from the GLM, not the within-class voxel-by-exemplar data matrices, to estimate $\Sigma$ \href{https://doi.org/10.1016/j.neuroimage.2010.05.051}{(e.g., Misaki et al., 2010)}.
+Given that there are typically more TRs within a run than voxels within a parcel, estimating $\Sigma$ is now much more tractable.
+(Note that this is not the exact form of prewhitening derived by Fisher for LDA.
+But nevertheless, the \textit{prewhitened cross-valided euclidean distance} is what \href{https://doi.org/10.1016/j.neuroimage.2015.12.012}{Walther et al. (2016)} refer to as the \textit{cross-validated mahalanobis}.)
+
+To perform prewhitening in my analyses, I followed procedures outlined in \href{https://arxiv.org/abs/1607.01371}{Diedrichsen et al (2016)}.
+
+Let $\mathbf{\epsilon}_r$ represent the matrix of residual timecourses for a given run $r$, parcel, and subject.
+I.e., $\mathbf{\epsilon}_1$ is $TR \times V$ and corresponds to run 1.
+The vertex-by-vertex covariance matrix of $\mathbf{\epsilon}_1$ is given by $\mathbf{\Sigma}_1 = \text{Cov}(\epsilon_1) = \mathbf{\epsilon}_1^T\mathbf{\epsilon}_1$.
+
+\begin{itemize}
+  \item to curb overfitting (and potentially aid inversion), $\Sigma_1$ is regularized by shrinking it towards an identity matrix by a factor $\lambda$, i.e.: 
+    $\mathbf{\Sigma}^*_1 = \lambda \mathbf{I} + (1 - \lambda) \mathbf{\Sigma}_1$.
+    This is a common procedure that makes LDA perform much better in high-dimensional scenarios (see, e.g. \href{https://doi.org/10.1093/biostatistics/kxj035}{Guo, Hastie, Tibshirani, 2006}]).
+  \item $\lambda$ can be estimated optimally \href{https://repositori.upf.edu/bitstream/handle/10230/560/691.pdf}{(Ledoit \& Wolf, 2003)}.
+    However, for a first-pass analysis, I used a healthy factor of $\lambda = 0.4$
+  \item Once estimated, $\Sigma_1$ is inverted, e.g. $\mathbf{\Sigma}^{*-1}_1$, to perform the matrix division.
+  \item This estimation and inversion was done separately for both runs. Matrices were then averaged across run
+    $\mathbf{\Sigma}^{*-1} = (\mathbf{\Sigma}^{*-1}_1 + \Sigma^{*-1}_2)/2$, yielding a single matrix $\Sigma^{*-1}$, to be applied to patterns of both runs.
+    \begin{itemize}
+      \item however, an alternative method, which may give a lower variance estimate of $\Sigma^{*-1}$, would be to concatenate $\epsilon_1$ and $\epsilon_2$ along the time dimension,
+        $\epsilon = \big(\begin{smallmatrix}
+        \epsilon_1\\
+        \epsilon_2
+        \end{smallmatrix}\big)$,
+        then use the concatenated matrix to estimate a single covariance matrix $\Sigma = \text{Cov}(\epsilon)$ across all timepoints from run 1 and run 2.
+        I'll leave this for future exploration.
+    \end{itemize}
+\end{itemize}
+
+
+\subsection*{application}
+
+Prewhitening can be incorporated into any of the estimation procedures outlined above.
+For example:
+
+\[r_\textit{vanilla, prw} = \text{cor}(x_{(1)}\mathbf{\Sigma}^{*-1/2}, y_{(2)}\mathbf{\Sigma}^{*-1/2})\]
+
+\[d^2_\textit{vanilla, prw} = \mathbf{a} \mathbf{\Sigma}^{*-1} \mathbf{a}\]
+
+\[d^2_\textit{cv, prw} = \mathbf{a}_{(1)} \mathbf{\Sigma}^{*-1} \mathbf{a}_{(2)}\]
+
+
+\end{document}

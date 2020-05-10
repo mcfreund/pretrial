@@ -1,0 +1,468 @@
+---
+title: 'Defining ROIs: cross-validated RSA'
+author: "mike freund"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    highlight: zenburn
+
+---
+
+```{r setup, include = FALSE}
+
+measure.i <- "eucl"
+
+knitr::opts_chunk$set(
+  cache = FALSE, echo = FALSE, warning = FALSE, message = FALSE,
+  fig.align = 'center',
+  fig.width = 11.5, fig.fullwidth = TRUE,
+  cache.path = paste0(measure.i, "/cache/"),
+  fig.path = paste0(measure.i, "/figs/")
+)
+
+set.seed(0)
+
+library(here)
+library(magrittr)
+library(dplyr)
+library(tidyr)
+library(data.table)
+library(mikeutils)
+library(lme4)
+library(lmerTest)
+library(ggplot2)
+library(ggbeeswarm)
+library(ggridges)
+library(viridis)
+library(grid)
+library(gridExtra)
+library(cowplot)
+library(cifti)
+library(gifti)
+library(abind)
+
+source(here("src", "setup.R"))
+
+## settings ----
+
+theme_set(theme_minimal(base_size = 14))
+
+## functions ----
+
+plot_matrix <- function(d) {
+  
+  if (is.matrix(d)) d <- reshape2::melt(d)
+  
+  d %>%
+    mutate(.col = factor(.col, levels = rev(unique(.col)))) %>%
+    ggplot(aes(.row, .col, fill = value)) +
+    geom_tile() +
+    # scale_fill_viridis() +
+    scale_fill_gradient(low = "black", high = "white") +
+    theme(
+      # legend.position = "none", 
+      panel.grid = element_blank(), 
+      # panel.background = element_blank(),
+      axis.text.x = element_blank(),
+      # axis.ticks = element_blank(), 
+      axis.title = element_blank()
+      )
+
+}
+
+tidy_lmer <- function(x) {
+  coefs <- as.data.frame(coef(summary(x)))
+  coefs$term <- rownames(coefs)
+  dplyr::rename(coefs, estimate = "Estimate", se = "Std. Error", "statistic" = "t value", p.value = "Pr(>|t|)")
+}
+
+## data ----
+
+## parcel-wise similarity matrices
+
+cross.2tr1knot <- abind(
+  readRDS(
+    here(
+      "out", "rsa", "observed", 
+      paste0("rmatrix_crossva_", measure.i, "_shaefer400_baseline_Congruency_EVENTS_censored.rds")
+      )
+    ),
+  readRDS(
+    here(
+      "out", "rsa", "observed", 
+      paste0("rmatrix_crossva_", measure.i, "_shaefer400_proactive_Congruency_EVENTS_censored.rds")
+      )
+    ),
+  rev.along = 0
+)
+
+names(dimnames(cross.2tr1knot)) <- c(".row", ".col", "norma", "knot", "parcel", "subj", "session")
+dimnames(cross.2tr1knot)$session <- c("baseline", "proactive")
+
+cross.1tr1knot <- abind(
+  readRDS(
+    here(
+      "out", "rsa", "observed", 
+      paste0("rmatrix_crossva_", measure.i, "_shaefer400_baseline_Congruency_EVENTS_tentzero01210_censored.rds")
+      )
+    ),
+  readRDS(
+    here(
+      "out", "rsa", "observed",
+      paste0("rmatrix_crossva_", measure.i, "_shaefer400_proactive_Congruency_EVENTS_tentzero01210_censored.rds"))
+    ),
+  rev.along = 0
+)
+
+names(dimnames(cross.1tr1knot)) <- c(".row", ".col", "norma", "knot", "parcel", "subj", "session")
+dimnames(cross.1tr1knot)$session <- c("baseline", "proactive")
+
+## filter subjs by those with data
+
+has.stats.2tr1knot <- apply(cross.2tr1knot, "subj", function(.) !any(is.na(c(.))))
+has.stats.1tr1knot <- apply(cross.1tr1knot, "subj", function(.) !any(is.na(c(.))))
+has.stats <- has.stats.2tr1knot & has.stats.1tr1knot
+subjs.with.stats <- names(has.stats)[has.stats]
+
+## TODO
+## these subjects do not have stats
+# setdiff(c(subjs.analysis, subjs.development), subjs.with.stats)
+## could be due to
+##  - no 3d+t gifti -> have RAs run
+##  - no beta gifti -> diagnose problem and fit
+
+subjs.analysis <- intersect(subjs.analysis, subjs.with.stats)
+subjs.development <- intersect(subjs.development, subjs.with.stats)
+subjs.bad <- intersect(subjs.bad, subjs.with.stats)
+
+
+## subset data ----
+
+cross.2tr1knot <- cross.2tr1knot[, , , , , subjs.analysis, ]
+cross.1tr1knot <- cross.1tr1knot[, , , , , subjs.analysis, ]
+
+## palettes ----
+
+colors.glm <- c("2tr1knot" = "#d95f02", "1tr1knot" = "#1b9e77")
+colors.celltype <- c(I_I = "#e41a1c", C_C = "#377eb8", I_C = "#4daf4a")
+
+## wrangle ----
+
+## unwrap to lower triangle vectors
+
+cross.1tr1knot.d <- cross.1tr1knot
+for (row.i in seq_len(nrow(cross.1tr1knot))) {
+  for (col.i in seq_len(ncol(cross.1tr1knot))) {
+    if (row.i <= col.i) cross.1tr1knot.d[row.i, col.i, , , , , ] <- NA
+  }
+}
+cross.2tr1knot.d <- cross.2tr1knot
+for (row.i in seq_len(nrow(cross.1tr1knot))) {
+  for (col.i in seq_len(ncol(cross.1tr1knot))) {
+    if (row.i <= col.i) cross.2tr1knot.d[row.i, col.i, , , , , ] <- NA
+  }
+}
+
+cross.1tr1knot.d <- reshape2::melt(cross.1tr1knot.d, value.name = "simil", na.rm = TRUE) %>% mutate(glm = "1tr1knot")
+cross.2tr1knot.d <- reshape2::melt(cross.2tr1knot.d, value.name = "simil", na.rm = TRUE) %>% mutate(glm = "2tr1knot")
+
+## bind and add factor cols
+
+cross.2tr1knot.d$tr <- as.numeric(gsub("knot", "", cross.2tr1knot.d$knot)) * 2  ## knots to TRs
+cross.1tr1knot.d$tr <- as.numeric(gsub("knot", "", cross.1tr1knot.d$knot))
+cross <- bind_rows(cross.1tr1knot.d, cross.2tr1knot.d)  ## bind different glms
+
+cross$network <- ""  ## add networks
+for (network.i in networks) cross$network[grepl(network.i, cross$parcel)] <- network.i
+
+cross %<>% mutate(parcel.num = match(parcel, parcellation$key))
+
+## take out trash
+
+rm(cross.1tr1knot.d, cross.2tr1knot.d)
+gc()
+
+cross %<>% filter(norma == "raw") %>% select(-norma)  ## raw values only (not prewhitened)
+
+## scale within subject*region
+
+cross %<>%
+  group_by(knot, parcel, subj, session, glm, tr, network, parcel.num) %>%
+  mutate(simils = simil / sd(simil))
+
+
+cross %<>% filter(glm == "2tr1knot")
+
+# ## stats ----
+# 
+# # vanil.pc50.parcel.contrast <- vanil.pc50 %>%
+#   cross %>%
+#   group_by(session, network, tr, subj, parcel, celltype, glm, parcel.num) %>%
+#   summarize(simil = mean(simil)) %>%  ## average within celltype
+#   
+#   pivot_wider(names_from = "celltype", values_from = "simil") %>%  ## get contrast
+#   mutate(simil.contrast = I_I - I_C)
+# 
+# vanil.pc50.dmcc34 <- vanil.pc50 %>% filter(parcel.num %in% dmcc34)
+
+```
+
+
+# about
+
+<!-- 1. A cursory vanilla RSA on baseline and proactive data, PC50 items. -->
+<!-- 2. Identify a set of ROIs via RSA, separately in baseline and proactive, that respond to incongruency status. -->
+
+<!-- * __subjs__: -->
+
+<!-- * __similarity measures__: -->
+
+<!-- * __glms__: -->
+
+<!-- * __sessions__: -->
+
+<!-- * __conditons / trial types__: -->
+
+
+
+# data at a glance
+
+
+```{r distributions, fig.height = 7}
+
+## https://cran.r-project.org/web/packages/ggridges/vignettes/introduction.html
+
+## unscaled similarity
+
+grid.arrange(
+  
+  cross %>%
+    
+    ggplot(aes(simil, y = network, fill = network, height = stat(density))) +
+    geom_density_ridges(stat = "density", alpha = 0.8, rel_min_height = 0.01) +
+    
+    facet_grid(vars(session, glm)) +
+    scale_color_brewer(type = "qual") +
+    theme_minimal() +
+    theme(axis.text.y = element_text(vjust = 0), legend.position = "none"),
+  
+  cross %>%
+    
+    ggplot(aes(network, simil, fill = network)) +
+    geom_boxplot(width = 0.25, outlier.alpha = 0.5, outlier.size = 0.5) +
+    
+    facet_grid(vars(session, glm)) +
+    scale_color_brewer(type = "qual") +
+    theme_minimal() +
+    theme(legend.position = "none"),
+  
+  ncol = 2
+  
+)
+
+## scaled similarity
+
+grid.arrange(
+  
+  cross %>%
+    
+    ggplot(aes(simils, y = network, fill = network, height = stat(density))) +
+    geom_density_ridges(stat = "density", alpha = 0.8, rel_min_height = 0.01) +
+    
+    facet_grid(vars(session, glm)) +
+    scale_color_brewer(type = "qual") +
+    theme_minimal() +
+    theme(axis.text.y = element_text(vjust = 0), legend.position = "none"),
+  
+  cross %>%
+    
+    ggplot(aes(network, simils, fill = network)) +
+    geom_boxplot(width = 0.25, outlier.alpha = 0.5, outlier.size = 0.5) +
+    
+    facet_grid(vars(session, glm)) +
+    scale_color_brewer(type = "qual") +
+    theme_minimal() +
+    theme(legend.position = "none"),
+  
+  ncol = 2
+  
+)
+
+
+```
+
+__Mean (whole-brain) similarity matrices (2tr1knot only):__
+
+```{r matrices, fig.height = 10}
+
+allsim.2tr1knot.bas <- apply(cross.2tr1knot[, , "raw", , , , "baseline"], c(".row", ".col"), mean)
+allsim.2tr1knot.pro <- apply(cross.2tr1knot[, , "raw", , , , "proactive"], c(".row", ".col"), mean)
+
+grid.arrange(
+  
+  plot_matrix(allsim.2tr1knot.bas) + labs(title = "baseline"),
+  plot_matrix(allsim.2tr1knot.pro) + labs(title = "proactive"),
+  
+  ncol = 2
+  
+)
+
+```
+
+
+
+# Main effects
+
+
+## Stroop
+
+```{r, echo = TRUE}
+# is.me.stroop <- cross$.row == "biasInCon" & cross$.col == "biasCon" | cross$.row == "PC50InCon" & cross$.col == "PC50Con"
+# cross$congruency <- paste0(gsub("bias|PC50", "", cross$.row), "_", gsub("bias|PC50", "", cross$.col))
+# cross$pc <- paste0(gsub("InCon|Con", "", cross$.row), "_", gsub("InCon|Con", "", cross$.col))
+
+cross.w <- cross
+cross.w$cell <- paste0(cross$.row, "_", cross$.col)
+cross.w[c(".row", ".col")] <- NULL
+cross.w <- dcast.data.table(
+  as.data.table(cross.w),
+  knot + parcel + subj + session + glm + tr + network + parcel.num ~ cell, 
+  value.var = "simils"
+  )
+
+cross.w$stroop    <- with(cross.w, PC50Con_PC50InCon + biasCon_biasInCon) / 2
+cross.w$pc        <- with(cross.w, biasCon_PC50Con + biasInCon_PC50InCon) / 2
+cross.w$stroop.pc <- with(cross.w, biasCon_biasInCon - PC50Con_PC50InCon) / 2
+cross.w$pattconst <- with(
+  cross.w, 
+  (biasInCon_PC50InCon + biasCon_PC50Con) - (biasCon_PC50InCon + PC50Con_biasInCon)
+    ) / 4
+
+# group <- cross.w %>%
+#   
+#   select(knot, parcel, subj, session, glm, tr, network, parcel.num, stroop, pc, stroop.pc, pattconst) %>%
+#   as.data.table %>%
+#   melt(measure.vars = c("stroop", "pc", "stroop.pc", "pattconst"), value.name = "contrast") %>%
+#   
+#   group_by(knot, parcel, tr, network, parcel.num, session, variable) %>%
+
+
+group.stroop <- cross.w %>% 
+  
+  group_by(knot, parcel, tr, network, parcel.num, session) %>%
+  summarize(
+    m = mean(stroop),
+    statistic = wilcox.test(stroop, alternative = "greater")$statistic,
+    p.value = wilcox.test(stroop, alternative = "greater")$p.value
+    ) %>%
+  
+  group_by(knot, session) %>%
+  mutate(p.fdr = p.adjust(p.value))
+
+
+group.pc <- cross.w %>% 
+  
+  group_by(knot, parcel, tr, network, parcel.num, session) %>%
+  summarize(
+    m = mean(pc),
+    statistic = wilcox.test(pc, alternative = "greater")$statistic,
+    p.value = wilcox.test(pc, alternative = "greater")$p.value
+    ) %>%
+  
+  group_by(knot, session) %>%
+  mutate(p.fdr = p.adjust(p.value))
+
+
+group.pc.stroop <- cross.w %>% 
+  
+  group_by(knot, parcel, tr, network, parcel.num, session) %>%
+  summarize(
+    m = mean(stroop.pc),
+    statistic = wilcox.test(stroop.pc)$statistic,
+    p.value = wilcox.test(stroop.pc)$p.value
+    ) %>%
+  
+  group_by(knot, session) %>%
+  mutate(p.fdr = p.adjust(p.value))
+
+
+group.pattconst <- cross.w %>% 
+  
+  group_by(knot, parcel, tr, network, parcel.num, session) %>%
+  summarize(
+    m = mean(pattconst),
+    statistic = wilcox.test(pattconst)$statistic,
+    p.value = wilcox.test(pattconst)$p.value
+    ) %>%
+  
+  group_by(knot, session) %>%
+  mutate(p.fdr = p.adjust(p.value))
+
+
+group.session.x <- cross.w %>% 
+  
+  select(knot, parcel, subj, session, PC50Con_PC50InCon) %>%
+  dcast(knot + parcel + subj ~ session, value.var = "PC50Con_PC50InCon") %>%
+  
+  mutate(pro_bas = proactive - baseline) %>%
+  
+  group_by(knot, parcel) %>%
+  summarize(
+    m = mean(pro_bas),
+    statistic = wilcox.test(pro_bas)$statistic,
+    p.value = wilcox.test(pro_bas)$p.value
+    ) %>%
+  
+  group_by(knot) %>%
+  mutate(p.fdr = p.adjust(p.value))
+
+
+group.stroop %>% filter(p.fdr < 0.05) %>% as.data.frame
+group.pc %>% filter(p.fdr < 0.05) %>% as.data.frame
+group.pc.stroop %>% filter(p.fdr < 0.05) %>% as.data.frame
+group.pattconst %>% filter(p.fdr < 0.05) %>% as.data.frame
+group.session.x %>% filter(p.fdr < 0.05) %>% as.data.frame
+
+## maximal dimensionality?
+
+group.allcells <- cross.w %>% 
+  
+  group_by(knot, parcel, tr, network, parcel.num, session) %>%
+  summarize_at(
+    vars(PC50Con_PC50InCon:biasInCon_PC50InCon),
+    .funs = list(
+      m = mean,
+      statistic = ~wilcox.test(., alternative = "greater")$statistic,
+      p.value = ~wilcox.test(., alternative = "greater")$p.value
+    )
+  )
+
+group.allcells %<>%
+  
+  group_by(knot, tr, session) %>%
+  mutate_at(
+    vars(ends_with("p.value")),
+    list(fdr = ~p.adjust(., method = "fdr"))
+  )
+
+is.sig.fdr <- apply(group.allcells[grep("_fdr$", names(group.allcells))] < 0.05, 1, all)
+is.sig.uncorrected <- apply(group.allcells[grep("p.value$", names(group.allcells))] < 0.05, 1, all)
+
+sum(is.sig.fdr)
+sum(is.sig.uncorrected)
+
+group.allcells[
+  is.sig.uncorrected, 
+  c(
+    "knot", "tr", "parcel", "session", 
+    names(group.allcells)[grep("p.value$", names(group.allcells))]
+  )
+  ]
+
+
+
+
+```
+
+
