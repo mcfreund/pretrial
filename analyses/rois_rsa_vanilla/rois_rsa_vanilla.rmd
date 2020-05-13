@@ -6,19 +6,22 @@ output:
   html_document:
     toc: true
     highlight: zenburn
-
+knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_file = file.path(dirname(inputFile), paste0("rois_rsa_vanilla_", measure.i, "_", norma.i, ".html"))) })
 ---
 
 ```{r setup, include = FALSE}
 
-measure.i <- "neuc"
+# measure.i <- "corr"
+# norma.i <- "prw"
+
+dir.create(here::here("analyses", "rois_rsa_vanilla", paste0(measure.i, "_", norma.i)))
 
 knitr::opts_chunk$set(
   cache = TRUE, echo = FALSE, warning = FALSE, message = FALSE,
   fig.align = 'center',
   fig.width = 11.5, fig.fullwidth = TRUE,
-  cache.path = paste0(measure.i, "/cache/"),
-  fig.path = paste0(measure.i, "/figs/")
+  cache.path = paste0(measure.i, "_", norma.i, "/cache/"),
+  fig.path = paste0(measure.i, "_", norma.i, "/figs/")
 )
 
 set.seed(0)
@@ -232,7 +235,7 @@ rm(
 
 gc()
 
-vanil.pc50 %<>% filter(norma == "raw") %>% select(-norma)  ## raw values only (not prewhitened)
+vanil.pc50 %<>% filter(norma == norma.i) %>% select(-norma)  ## raw values only (not prewhitened)
 
 
 ## stats ----
@@ -247,6 +250,7 @@ vanil.pc50.parcel.contrast <- vanil.pc50 %>%
 
 vanil.pc50.dmcc34 <- vanil.pc50 %>% filter(parcel.num %in% dmcc34)
 
+
 ```
 
 
@@ -255,15 +259,17 @@ vanil.pc50.dmcc34 <- vanil.pc50 %>% filter(parcel.num %in% dmcc34)
 1. A cursory vanilla RSA on baseline and proactive data, PC50 items.
 2. Identify a set of ROIs via RSA, separately in baseline and proactive, that respond to incongruency status.
 
-* __subjs__:
+* __subjs__: `r length(subjs.analysis)`; `r subjs.analysis`
 
-* __similarity measures__:
+* __similarity measures__: `r measure.i`
 
-* __glms__:
+* __normalization__: `r norma.i`
 
-* __sessions__:
+* __glms__: 2tr1knot, 1tr1knot
 
-* __conditons / trial types__:
+* __sessions__: baseline only
+
+* __conditons / trial types__: PC50 items only
 
 
 
@@ -306,8 +312,11 @@ __Mean (whole-brain) similarity matrices (2tr1knot only):__
 
 ```{r matrices, fig.height = 10}
 
-allsim.2tr1knot.bas <- tanh(apply(atanh(vanil.2tr1knot[, , "raw", , , , "baseline"]), c(".row", ".col"), mean))
-allsim.2tr1knot.pro <- tanh(apply(atanh(vanil.2tr1knot[, , "raw", , , , "proactive"]), c(".row", ".col"), mean))
+allsim.2tr1knot.bas <- apply(vanil.2tr1knot[, , "raw", , , , "baseline"], c(".row", ".col"), mean)
+allsim.2tr1knot.pro <- apply(vanil.2tr1knot[, , "raw", , , , "proactive"], c(".row", ".col"), mean)
+
+# allsim.2tr1knot.bas <- tanh(apply(atanh(vanil.2tr1knot[, , "raw", , , , "baseline"]), c(".row", ".col"), mean))
+# allsim.2tr1knot.pro <- tanh(apply(atanh(vanil.2tr1knot[, , "raw", , , , "proactive"]), c(".row", ".col"), mean))
 
 grid.arrange(
   
@@ -1065,57 +1074,57 @@ At FDR-adjusted $\alpha$ = 0.05
 
 * the t statistics from above are plotted on brains here.
 
-## unthresholded
+### unthresholded
 
-### baseline 1tr1knot
+#### baseline 1tr1knot
 
 ```{r unthresh_baseline_1tr1knot, fig.height = 7, fig.width = 11}
 
 coef.vanil.roi %>%
   filter(session == "baseline", glm == "1tr1knot") %>%
   build_overlay("statistic", template = schaefer) %>%
-  plot_surface(underlay = hcp)
+  plot_surface(underlay = hcp, not.rstudio.gd = FALSE)
 
 ```
 
-### baseline 2tr1knot
+#### baseline 2tr1knot
 
 ```{r, fig.height = 7, fig.width = 11}
 
 coef.vanil.roi %>%
   filter(session == "baseline", glm == "2tr1knot") %>%
   build_overlay("statistic", template = schaefer) %>%
-  plot_surface(underlay = hcp)
+  plot_surface(underlay = hcp, not.rstudio.gd = FALSE)
 
 ```
 
-### proactive 1tr1knot
+#### proactive 1tr1knot
 
 ```{r, fig.height = 7, fig.width = 11}
 
 coef.vanil.roi %>%
   filter(session == "proactive", glm == "1tr1knot") %>%
   build_overlay("statistic", template = schaefer) %>%
-  plot_surface(underlay = hcp)
+  plot_surface(underlay = hcp, not.rstudio.gd = FALSE)
 
 ```
 
-### proactive 2tr1knot
+#### proactive 2tr1knot
 
 ```{r, fig.height = 7, fig.width = 11}
 
 coef.vanil.roi %>%
   filter(session == "proactive", glm == "2tr1knot") %>%
   build_overlay("statistic", template = schaefer) %>%
-  plot_surface(underlay = hcp)
+  plot_surface(underlay = hcp, not.rstudio.gd = FALSE)
 
 ```
 
 
-## thresholded
+### thresholded
 
 
-### baseline 1tr1knot
+#### baseline 1tr1knot
 
 ```{r, fig.height = 7, fig.width = 11}
 
@@ -1123,11 +1132,11 @@ coef.vanil.roi %>%
   filter(session == "baseline", glm == "1tr1knot") %>%
   mutate(statistic = ifelse(p.fdr < 0.05 & statistic > 0, statistic, 0)) %>%
   build_overlay("statistic", template = schaefer) %>%
-  plot_surface(underlay = hcp)
+  plot_surface(underlay = hcp, not.rstudio.gd = FALSE)
 
 ```
 
-### baseline 2tr1knot
+#### baseline 2tr1knot
 
 ```{r, fig.height = 7, fig.width = 11}
 
@@ -1135,11 +1144,11 @@ coef.vanil.roi %>%
   filter(session == "baseline", glm == "2tr1knot") %>%
   mutate(statistic = ifelse(p.fdr < 0.05 & statistic > 0, statistic, 0)) %>%
   build_overlay("statistic", template = schaefer) %>%
-  plot_surface(underlay = hcp)
+  plot_surface(underlay = hcp, not.rstudio.gd = FALSE)
 
 ```
 
-### proactive 1tr1knot
+#### proactive 1tr1knot
 
 ```{r, fig.height = 7, fig.width = 11}
 
@@ -1147,11 +1156,11 @@ coef.vanil.roi %>%
   filter(session == "proactive", glm == "1tr1knot") %>%
   mutate(statistic = ifelse(p.fdr < 0.05 & statistic > 0, statistic, 0)) %>%
   build_overlay("statistic", template = schaefer) %>%
-  plot_surface(underlay = hcp)
+  plot_surface(underlay = hcp, not.rstudio.gd = FALSE)
 
 ```
 
-### proactive 2tr1knot
+#### proactive 2tr1knot
 
 ```{r, fig.height = 7, fig.width = 11}
 
@@ -1159,7 +1168,7 @@ coef.vanil.roi %>%
   filter(session == "proactive", glm == "2tr1knot") %>%
   mutate(statistic = ifelse(p.fdr < 0.05 & statistic > 0, statistic, 0)) %>%
   build_overlay("statistic", template = schaefer) %>%
-  plot_surface(underlay = hcp)
+  plot_surface(underlay = hcp, not.rstudio.gd = FALSE)
 
 ```
 

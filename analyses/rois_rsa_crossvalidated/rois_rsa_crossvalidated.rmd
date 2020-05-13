@@ -11,7 +11,8 @@ output:
 
 ```{r setup, include = FALSE}
 
-measure.i <- "eucl"
+measure.i <- "neuc"
+norma.i <- "raw"
 
 knitr::opts_chunk$set(
   cache = FALSE, echo = FALSE, warning = FALSE, message = FALSE,
@@ -183,7 +184,7 @@ cross %<>% mutate(parcel.num = match(parcel, parcellation$key))
 rm(cross.1tr1knot.d, cross.2tr1knot.d)
 gc()
 
-cross %<>% filter(norma == "raw") %>% select(-norma)  ## raw values only (not prewhitened)
+cross %<>% filter(norma == norma.i) %>% select(-norma)  ## raw values only (not prewhitened)
 
 ## scale within subject*region
 
@@ -224,6 +225,7 @@ cross %<>% filter(glm == "2tr1knot")
 
 <!-- * __conditons / trial types__: -->
 
+`r norma.i`, `r measure.i`
 
 
 # data at a glance
@@ -312,15 +314,12 @@ grid.arrange(
 
 
 
-# Main effects
+# Models
 
 
-## Stroop
+## lists
 
 ```{r, echo = TRUE}
-# is.me.stroop <- cross$.row == "biasInCon" & cross$.col == "biasCon" | cross$.row == "PC50InCon" & cross$.col == "PC50Con"
-# cross$congruency <- paste0(gsub("bias|PC50", "", cross$.row), "_", gsub("bias|PC50", "", cross$.col))
-# cross$pc <- paste0(gsub("InCon|Con", "", cross$.row), "_", gsub("InCon|Con", "", cross$.col))
 
 cross.w <- cross
 cross.w$cell <- paste0(cross$.row, "_", cross$.col)
@@ -458,11 +457,106 @@ group.allcells[
     "knot", "tr", "parcel", "session", 
     names(group.allcells)[grep("p.value$", names(group.allcells))]
   )
-  ]
-
+  ] %>%
+  as.data.frame
 
 
 
 ```
 
+## brains, baseline, knot 2 (target)
 
+### stroop
+
+```{r, fig.height = 7, fig.width = 11}
+
+group.stroop %>%
+  
+  filter(knot == "knot2", session == "baseline") %>%
+  
+  mutate(
+    hemi = substr(parcel, 1, 1),
+    num.roi = match(parcel, parcellation$key),
+    statistic = ifelse(p.fdr < 0.05, m, 0)
+    ) %>%
+  
+  build_overlay("statistic", template = schaefer) %>%
+  plot_surface(underlay = hcp)
+
+```
+
+### PC
+
+```{r}
+
+group.pc %>%
+  
+  filter(knot == "knot2", session == "baseline") %>%
+  
+  mutate(
+    hemi = substr(parcel, 1, 1),
+    num.roi = match(parcel, parcellation$key),
+    statistic = ifelse(p.fdr < 0.05, m, 0)
+    ) %>%
+  
+  build_overlay("statistic", template = schaefer) %>%
+  plot_surface(underlay = hcp)
+
+```
+
+### pc * stroop
+
+```{r}
+
+group.pc.stroop %>%
+  
+  filter(knot == "knot2", session == "baseline") %>%
+  
+  mutate(
+    hemi = substr(parcel, 1, 1),
+    num.roi = match(parcel, parcellation$key),
+    statistic = ifelse(p.fdr < 0.05, m, 0)
+    ) %>%
+  
+  build_overlay("statistic", template = schaefer) %>%
+  plot_surface(underlay = hcp)
+
+```
+
+### pattern consistency
+
+```{r}
+
+group.pattconst %>%
+  
+  filter(knot == "knot2", session == "baseline") %>%
+  
+  mutate(
+    hemi = substr(parcel, 1, 1),
+    num.roi = match(parcel, parcellation$key),
+    statistic = ifelse(p.fdr < 0.05, m, 0)
+    ) %>%
+  
+  build_overlay("statistic", template = schaefer) %>%
+  plot_surface(underlay = hcp)
+
+```
+
+### session*stroop | pc50
+
+```{r}
+
+group.session.x %>%
+  
+  filter(knot == "knot2", session == "baseline") %>%
+  
+  mutate(
+    hemi = substr(parcel, 1, 1),
+    num.roi = match(parcel, parcellation$key),
+    statistic = ifelse(p.fdr < 0.05, statistic, 0)
+    ) %>%
+  
+  build_overlay("statistic", template = schaefer) %>%
+  plot_surface(underlay = hcp)
+
+```

@@ -8,20 +8,8 @@ output:
     highlight: zenburn
 ---
 
-<script type="text/x-mathjax-config">
-MathJax.Hub.Config({
-  TeX: { 
-      equationNumbers: {
- 
-            autoNumber: "ams",
-            formatNumber: function (n) {return +n}
-      } 
-  }
-});
-</script>
 
-
-# 0. About
+# About
 
 Here 12 different forms of similarity are considered.
 
@@ -38,227 +26,7 @@ Here 12 different forms of similarity are considered.
     * **"raw"**, or un-normalized
     * spatially **prewhitened**, or "multivariate noise normalized"
 
-Below, these things are described and references linked.
-
-## measures of similarity and "methods of estimation"
-
-### A general note.
-
-All of these measures --- correlation, euclidean, standardized euclidean --- involve a __quadratic form__, a term that is multiplied to itself.
-In correlation, for example, this form is the variance of each measure: $Var(x) = Cov(x, x) = E[(x - \bar{x})^2]$.
-In euclidean distance, this form is the square of a difference vector: $(\mathbf{x} - \mathbf{y}) \cdot (\mathbf{x} - \mathbf{y}) = (\mathbf{x} - \mathbf{y})^2$
-
-Within the context of classical test theory, a measure $x$ is composed of true score and error components.
-Because these similarity measures involve mutliplying $x$ to itself, both the true score and error components are squared, and both contribute to the expected value of the estimate.
-This is what makes these similarity measures 'biased'.
-
-"Cross-validated" versions of these measures are unbiased: insensitive, in terms of expected value, to the error component.
-These measures all use the same 'trick' to make them unbiased.
-This trick is to "swap out" one of these $x$ terms within the quadratic form with an independent "copy" of itself.
-In cross-validated correlation, for example, the quadratic form for $Cov(x, x)$ is substituted with two independent copies of $x$, obtained from different scanning runs, $Cov(x_{(1)}, x_{(2)})$.
-This swapping out creates an unbiased measure because the error terms cancel out (because of independence; see [Alink et al, 2015](https://www.biorxiv.org/content/10.1101/032391v2) for the algebra).
-
-
-### linear correlation
-
-#### vanilla method
-
-The correlation between two pattern vectors $x, y$ can be written
-
-\[
-r_\textit{vanilla} = \text{cor}(x, y) = \frac
-{\text{Cov}(x, y)}
-{\sqrt{\text{Var}(x)\text{Var}(y)}}
-\]
-
-i.e., the covariance of a measure standardized by the (rooted product of the) variances.
-
-This is equivalent to writing
-
-\[
-  r_\textit{vanilla} = \frac{\text{Cov}(x, y)}{\sqrt{\text{Cov}(x, x)\text{Cov}(y, y)}}
-\]
-
-because the covariance of a measure with itself is the variance.
-
-In the context of "vanilla" / cross-run RSA, the correlation of $x$ and $y$  is estimated _across scanning runs_ --- e.g., $x$ from run 1 and $y$ from run 2:
-
-\begin{equation}
-
-  r_\textit{vanilla} = \text{cor}(x_{(1)}, y_{(2)}) = 
-  \frac{\text{Cov}(x_{(1)}, y_{(2)})}
-  {\sqrt{\text{Cov}(x_{(1)}, x_{(1)})\text{Cov}(y_{(2)}, y_{(2)})}}
-  
-\end{equation}
-
-Estimating across runs gives robustness to potential design artifacts stemming from temporal autocorrelation [(Alink et al, 2015)](https://www.biorxiv.org/content/10.1101/032391v2).
-
-<!-- Because this yields two values --- $cor(x_1, y_2)$ and $cor(x_2, y_1)$ --- these are averaged together. -->
-
-#### cross-validated method
-
-To make the linear correlation unbiased, the [Spearman's correction for attenuation](https://en.wikipedia.org/wiki/Correction_for_attenuation) is applied.
-
-The idea is that the maximum observable correlation between $x_{(1)}$ and $y_{(2)}$ is bounded by the (root product of their) reliabilities (lower reliability, lower correlation).
-So, to correct for measurement error, the observed correlation values are scaled by their reliability.
-Here, reliability is estimated as the cross-run covariance.
-
-Essentially, this amounts to swapping one out of each of the measures in the denominator of __(1)__, $x_{(1)}$ and  $y_{(2)}$, with an independent 'copy' of itself, $x_{(2)}$ and $y_{(1)}$:
-
-\begin{equation}
-
-  r_\textit{cv} = \frac
-  {\text{Cov}(x_{(1)}, y_{(1)})}
-  {\sqrt{\text{Cov}(x_{(1)}, x_{(2)})\text{Cov}(y_{(1)}, y_{(2)})}}
-
-\end{equation}
-
-* see Appendix of [(Alink et al, 2015)](https://www.biorxiv.org/content/10.1101/032391v2) for expanded definition of cross-run correlation.
-
-* because a covariance between independent measurements can be $\leq 0$, the denominator of the cross-validated correlation can be undefined (because of the root).
-
-* this property is problematic for this measure, as even moderate amounts of noise can make this measure unstable and cause 'missing' data.
-
-* I include the measure here for completeness but it was indeed very unstable.
-
-
-### euclidean distance
-
-#### vanilla
-
-The vanilla / cross-run squared euclidean distance can be written
-
-\[
-d^2_\textit{vanilla} = \sum_{v = 1}^{V}(x_{v(1)} - y_{v(2)})^2
-\]
-
-i.e., the sum of squared differences between voxels $v$ in $1, \dots V$ in pattern $x$ from run 1 and pattern $y$ from run 2.
-
-The subtraction operation above can also be thought of in vector form, where $x$ and $y$ are vectors $\mathbf{x}$ and $\mathbf{y}$, and $\mathbf{a} = \mathbf{x} - \mathbf{y}$ is the difference vector, or vector [pointing from $\mathbf{y}$ to $\mathbf{x}$](https://www.google.com/search?q=vector+subtraction&client=firefox-b-1-d&sxsrf=ALeKk00syNVDPLbGdMF_spS_wgfJXqp50A:1589025736959&source=lnms&tbm=isch&sa=X&ved=2ahUKEwih_9uU3qbpAhVGK80KHT5hB4EQ_AUoAXoECA4QAw&biw=2400&bih=1185#imgrc=Tjt-W0VN7s-a4M).
-The squared euclidean distance can then be thought of as the squared _length_ of this difference vector.
-[The squared length of a vector is just a vector multiplied by itself.]
-So:
-
-\begin{equation}
-d^2_\textit{vanilla} = \mathbf{a}^2 = \mathbf{a} \cdot \mathbf{a} = \sum_{v = 1}^V a_v^2 =  \sum_{v = 1}^{V}(x_{v(1)} - y_{v(2)})^2
-\end{equation}
-
-#### cross-validated
-
-To make this measure unbiased, the trick here is to perform the subtraction *within-run*, then multiply the difference vectors *between-run*.
-This ensures that the two terms in the multiplication (two 'copies' of $\mathbf{a}$: $\mathbf{a}_{(1)}$ and $\mathbf{a}_{(2)}$) have independent errors.
-Because they are independent, [these error terms cancel in the multiplication](https://doi.org/10.1016/j.neuroimage.2015.12.012), meaning that the resulting product (distance) reflects only the true distance.
-<!-- swap one of the difference vectors above with an independent 'copy' of itself: -->
-
-\begin{equation}
-
-d^2_\textit{cv} = \mathbf{a}_{(1)} \cdot \mathbf{a}_{(2)} = \sum_{v = 1}^V a_{v{(1)}}a_{v{(2)}} = \sum_{v = 1}^{V}(x_{v(1)} - y_{v(1)})(x_{v(2)} - y_{v(2)})
-
-\end{equation}
-
-
-If there is no consistent difference between $x$ and $y$ across scanning runs, then the expected value of $d^2_\textit{cv}$ is zero.
-(Note that, because $d^2_\textit{cv}$ can be negative, it is not square-rooted, but left as a squared euclidean distance.)
-
-### standardized euclidean distance
-
-#### vanilla
-
-If the patterns $x$ and $y$ are z-score standardized, the squared euclidean's distance between them will be [equivalent to the linear correlation, within a scaling factor](https://arxiv.org/abs/1601.02213).
-
-Let the tilde denote this standardization, e.g., 
-\[
-\widetilde{x}_{v(1)} = 
-\frac{x_{v(1)} - \bar{x}_{v(1)}}
-{\text{sd}(x_{v(1)})}
-\]
-
-so that
-
-\begin{equation}
-
-r_\textit{vanilla} \propto \widetilde{d}^2_\textit{vanilla} = \sum_{v = 1}^{V}(\widetilde{x}_{v(1)} - \widetilde{y}_{v(2)})^2
-
-\end{equation}
-
-For intuition, consider that the correlation is sensitive to the pattern "shape" (or, *angle* in vector space); scale (vector length) and mean differences (vector length along the unity line), however, are removed.
-Likewise, the euclidean distance is sensitive to "shape" --- but also to scale, and to mean differences.
-Removing scale and mean differences by z-score normalizing renders euclidean and correlation sensitive to idenditcal information.
-
-#### cross-validated
-
-Standardized euclidean distance can be cross-validated in the same manner as euclidean's distance:
-
-\begin{equation}
-
-\widetilde{d}^2_\textit{cv} = \sum_{v = 1}^{V}(\widetilde{x}_{v(1)} - \widetilde{y}_{v(1)})(\widetilde{x}_{v(2)} - \widetilde{y}_{v(2)})
-
-\end{equation}
-
-
-## prewhitening
-
-Any of these measures can be computed on spatially 'prewhitened' patterns.
-
-### Description
-
-Spatial prewhitening is a normalization procedure that shrinks the patterns along dimensions of correlated noise (thus stretching, relatively, along less noisy ones).
-
-In the context of classification and Fisher's linear discriminant analysis, this whitening takes the form of normalizing by dividing patterns by the within-class (noise) covariance matrix, $\Sigma$ [(e.g.)](https://sthalles.github.io/fisher-linear-discriminant/) and indicates how the class exemplars are distributed about their class centroids. (In LDA, all classess are assumed to share a common within-class covariance matrix.)
-Fisher proved that using this transform maximized the between-class variance (the difference vector between class centroids) relative to the within-class variance, and he actually did so nonparametrically [(ESLII, p 110)](https://www.google.com/url?sa=t&rct=j&q=&esrc=s&source=web&cd=1&ved=2ahUKEwii64jX76bpAhUKa80KHRQ7B4MQFjAAegQIAxAB&url=https%3A%2F%2Fweb.stanford.edu%2F~hastie%2FPapers%2FESLII.pdf&usg=AOvVaw25QCy16hNG1RTjwQm4qzz8).
-After applying this sphering transform, Euclidean distances between observations [become Mahalanobis distances](https://en.wikipedia.org/wiki/Mahalanobis_distance#Definition_and_properties).
-
-In the context of rapid event-related fMRI designs, problems arise in estimating $\Sigma$, which has dimension $V \times V$.
-There aren't enough exemplars (pattern estimates) of each class (condition) to get a good estimate of the across-voxel correlation structure.
-But, a trick here is to use the residual timecourses from the GLM, not the within-class voxel-by-exemplar data matrices, to estimate $\Sigma$.
-Given that there are typically more TRs within a run than voxels within a parcel, estimating $\Sigma$ is now much more tractable.
-(Note that this is not the exact form of prewhitening derived by Fisher for LDA.
-But nevertheless, the *prewhitened cross-valided euclidean distance* is what Walther et al. refer to as the *cross-validated mahalanobis*.)
-
-
-### Estimation
-
-I followed procedures outlined in [Diedrichsen et al (2016)](https://arxiv.org/abs/1607.01371).
-
-Let $\mathbf{\epsilon}_r$ represent the matrix of residual timecourses for a given run $r$, parcel, and subject.
-I.e., $\mathbf{\epsilon}_1$ is $TR \times V$ and corresponds to run 1.
-The vertex-by-vertex covariance matrix of $\mathbf{\epsilon}_1$ is given by $\mathbf{\Sigma}_1 = \text{Cov}(\epsilon_1) = \mathbf{\epsilon}_1^T\mathbf{\epsilon}_1$.
-
-* to curb overfitting (and potentially aid inversion), $\Sigma_1$ is regularized by shrinking it towards an identity matrix by a factor $\lambda$, i.e.: $\mathbf{\Sigma}^*_1 = \lambda \mathbf{I} + (1 - \lambda) \mathbf{\Sigma}_1$. This is a common procedure that makes LDA perform much better in high-dimensional scenarios (see, e.g. [Guo, Hastie, Tibshirani, 2006](https://doi.org/10.1093/biostatistics/kxj035)).
-  
-    * $\lambda$ can be estimated optimally [(Ledoit & Wolf, 2003)](https://repositori.upf.edu/bitstream/handle/10230/560/691.pdf); however for a first-pass analysis I used a healthy factor of $\lambda = 0.4$
-
-
-* then $\Sigma_1$ is inverted, e.g. $\mathbf{\Sigma}^{*-1}_1$, to perform the matrix division.
-
-
-* this was done for both runs, and matrices were averaged across run $\mathbf{\Sigma}^{*-1} = (\mathbf{\Sigma}^{*-1}_1 + \Sigma^{*-1}_2)/2$.
-This yields a single matrix $\Sigma^{*-1}$, to be applied to patterns of both runs.
-
-    * however, an alternative method, which may give a lower variance estimate of $\Sigma^{*-1}$, would be to concatenate $\epsilon_1$ and $\epsilon_2$ along the time dimension, $\epsilon = \big(\begin{smallmatrix}
-  \epsilon_1\\
-  \epsilon_2
-\end{smallmatrix}\big)$
-, then use the concatenated matrix to estimate a single covariance matrix $\Sigma = \text{Cov}(\epsilon)$ across all timepoints from run 1 and run 2.
-I'll leave this for future exploration.
-
-
-### Application
-
-
-Prewhitening can be incorporated into any of the estimation procedures outlined above.
-For example:
-
-\[r_\textit{vanilla, prw} = \text{cor}(x_{(1)}\mathbf{\Sigma}^{*-1/2}, y_{(2)}\mathbf{\Sigma}^{*-1/2})\]
-
-\[
-d^2_\textit{vanilla, prw} = \mathbf{a} \mathbf{\Sigma}^{*-1} \mathbf{a}
-\]
-
-\[
-d^2_\textit{cv, prw} = \mathbf{a}_{(1)} \mathbf{\Sigma}^{*-1} \mathbf{a}_{(2)}
-\]
-
+For definition and discussion of these measures, see __./misc/measures_of_similarity.pdf__.
 
 ```{r setup, include = FALSE}
 
@@ -288,6 +56,7 @@ library(cowplot)
 library(cifti)
 library(gifti)
 library(abind)
+library(boot)
 
 source(here("src", "setup.R"))
 
@@ -940,7 +709,7 @@ grid.arrange(
 
 ## vanilla measures
 
-vanil.d <- vanil[1:4, 5:8, "raw", , , , ] %>% reshape2::melt(value.name = "simil") %>% mutate(method = "vanil")
+vanil.d <- vanil[1:4, 5:8, , , , , ] %>% reshape2::melt(value.name = "simil") %>% mutate(method = "vanil")
 
 vanil.d$.row <- gsub("_run.$", "", vanil.d$.row)
 vanil.d$.col <- gsub("_run.$", "", vanil.d$.col)
@@ -972,13 +741,13 @@ vanil.d$condition <- ifelse(
 # sum(is.na(vanil.d$condition))
 
 vanil.d <- vanil.d %>%
-  group_by(parcel, subj, measure, session, method, condition) %>%
+  group_by(parcel, subj, measure, session, method, condition, norma) %>%
   summarize(simil = mean(simil))  ## summarize by condiiton
 
 
 ## cross-validated measures
 
-cross.d <- cross[, , "raw", , , , ] %>% reshape2::melt(value.name = "simil") %>% mutate(method = "cross")
+cross.d <- cross %>% reshape2::melt(value.name = "simil") %>% mutate(method = "cross")
 
 cross.d$pc <- ifelse(
   grepl("PC50", cross.d$.row) & grepl("PC50", cross.d$.col), "pc50_pc50",
@@ -1006,8 +775,8 @@ cross.d$condition <- ifelse(
 
 # sum(is.na(cross.d$condition))
 
-cross.d <- cross.d %>%
-  group_by(parcel, subj, measure, session, method, condition) %>%
+cross.d <- cross.d %>% 
+  group_by(parcel, subj, measure, session, method, condition, norma) %>%
   summarize(simil = mean(simil))  ## summarize by condiiton
 
 ## bind
@@ -1018,7 +787,7 @@ d <- bind_rows(cross.d, vanil.d)
 
 d.stats <- d %>%
   
-  .[.$session == 'proactive', ] %>%
+  .[.$session == 'proactive' & .$norma == "raw", ] %>%
   
   pivot_wider(names_from = "condition", values_from = "simil") %>%
   group_by(parcel, measure, method) %>%
@@ -1030,6 +799,12 @@ d.stats <- d %>%
   mutate(p.fdr = p.adjust(p.value, method = "fdr"))
 
 
+d.stats <- d.stats %>% 
+  mutate(
+    hemi = substr(parcel, 1, 1),
+    num.roi = match(parcel, parcellation$key)
+    )
+
 ```
 
 
@@ -1038,7 +813,7 @@ d.stats <- d %>%
 
 d %>%
   
-  .[.$session == 'proactive', ] %>%
+  .[.$session == 'proactive' & .$norma == "raw", ] %>%
   
   group_by(subj, measure, session, condition, method) %>%
   summarize(simil = mean(simil)) %>%
@@ -1105,6 +880,49 @@ with(d.stats, table(interaction(measure, method), p.value < 0.05))
 
 ```
 
+##### correlation, cross-validated
+
+```{r, fig.height = 7, fig.width = 11}
+
+d.stats %>%
+  
+  filter(method == "cross", measure == "corr") %>%
+  mutate(t.value = ifelse(p.value < 0.05, statistic, 0)) %>%
+  
+  build_overlay("t.value", template = schaefer) %>%
+  plot_surface(underlay = hcp)
+
+```
+
+
+##### euclidean, cross-validated
+
+```{r, fig.height = 7, fig.width = 11}
+
+d.stats %>%
+  
+  filter(method == "cross", measure == "eucl") %>%
+  mutate(t.value = ifelse(p.value < 0.05, statistic, 0)) %>%
+  
+  build_overlay("t.value", template = schaefer) %>%
+  plot_surface(underlay = hcp)
+
+```
+
+##### standardized euclidean, cross-validated
+
+```{r, fig.height = 7, fig.width = 11}
+
+d.stats %>%
+  
+  filter(method == "cross", measure == "neuc") %>%
+  mutate(t.value = ifelse(p.value < 0.05, statistic, 0)) %>%
+  
+  build_overlay("t.value", template = schaefer) %>%
+  plot_surface(underlay = hcp)
+
+```
+
 
 # 3. Extended analyses of prewhitening on cross-validated measures
 
@@ -1112,11 +930,219 @@ with(d.stats, table(interaction(measure, method), p.value < 0.05))
 
 ### stroop effects (I--C discriminability) across item types (pc50, bias)
 
+```{r}
+
+n.resamp <- 1000
+
+cross.d <- cross.d %>%
+  ungroup %>%
+  mutate(
+    hemi = substr(parcel, 1, 1),
+    num.roi = match(parcel, parcellation$key)
+  )
+
+cross.d2 <- cross.d %>% 
+  
+  .[.$num.roi %in% dmcc34 & .$session == "baseline", ] %>%
+  
+  pivot_wider(names_from = c("condition", "norma"), values_from = "simil")
+  
+# df <- cross.d2 %>% filter(parcel == "LH_Vis_22", measure == "corr")  
+
+```
+
+
+```{r}
+
+g <- with(cross.d2, paste0(measure, ".", parcel))
+l <- split(cross.d2, g)
+
+boot.cross.cell <- l %>% 
+  lapply(
+    function(.) {
+      boot(
+        ., 
+        statistic = function(dat, ind) {
+          dat.i <- dat[ind, ]
+          r.raw <- cor(dat.i$biasI_C_raw, dat.i$pc50I_C_raw)
+          r.prw <- cor(dat.i$biasI_C_prw, dat.i$pc50I_C_prw)
+          r.prw^2 - r.raw^2
+          },
+        R = n.resamp
+      )
+    }
+  )
+
+res.cross.cell <- boot.cross.cell %>% vapply(function(.) boot.ci(., type = "bca")$bca[4:5], numeric(2))
+res.cross.cell <- rbind(res.cross.cell, boot.cross.cell %>% vapply(function(.) .$t0, numeric(1)))
+res.cross.cell <- as.data.frame(t(res.cross.cell))
+res.cross.cell %<>% cbind(reshape2::colsplit(rownames(.), "\\.", c("measure", "parcel")))
+res.cross.cell %<>% rename(lb = V1, ub = V2, m = V3)
+
+
+res.cross.cell %>%
+  
+  ggplot(aes(parcel, m)) +
+  
+  geom_hline(yintercept = 0) +
+  geom_point() +
+  geom_errorbar(aes(ymin = lb, ymax = ub)) +
+  
+  facet_grid(vars(measure)) +
+  
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+
+```
+
+
 ### association with RT
 
-* averaged across DMCC34
+
+
+```{r}
+
+behav.data <- pretrial %>% filter(session == "bas", subj %in% subjs.analysis, rt > 500, rt < 2500, acc == 1, !is.na(rt))
+fit <- lmer(rt ~ trial.type + (trial.type | subj), behav.data)
+stroop.effs <- data.frame(subj = rownames(coef(fit)$subj), stroop.rt = coef(fit)$subj$trial.typei)
+
+vanil.d2 <- vanil.d %>% 
+  
+  ungroup %>%
+  mutate(
+    hemi = substr(parcel, 1, 1),
+    num.roi = match(parcel, parcellation$key)
+  ) %>%
+  
+  .[.$num.roi %in% dmcc34 & .$session == "baseline", ] %>%
+  
+  pivot_wider(names_from = c("condition", "norma"), values_from = "simil")
+
+d2 <- bind_rows(vanil.d2, cross.d2)
+
+d2 <- inner_join(d2, stroop.effs, by = "subj")
+
+d2$I_C_raw <- (d2$biasI_C_raw + d2$pc50I_C_raw) / 2
+d2$I_C_prw <- (d2$biasI_C_prw + d2$pc50I_C_prw) / 2
+
+g <- with(d2, paste0(method, "." ,measure, ".", parcel))
+l <- split(d2, g)
+
+boot.stroop <- l %>% 
+  lapply(
+    function(.) {
+      boot(
+        ., 
+        statistic = function(dat, ind) {
+          dat.i <- dat[ind, ]
+          r.raw <- cor(dat.i$I_C_raw, dat.i$stroop.rt)
+          r.prw <- cor(dat.i$I_C_prw, dat.i$stroop.rt)
+          r.prw^2 - r.raw^2
+          },
+        R = n.resamp
+      )
+    }
+  )
+
+res.stroop <- boot.stroop %>% vapply(function(.) boot.ci(., type = "bca")$bca[4:5], numeric(2))
+res.stroop <- rbind(res.stroop, boot.stroop %>% vapply(function(.) .$t0, numeric(1)))
+res.stroop <- as.data.frame(t(res.stroop))
+res.stroop %<>% cbind(reshape2::colsplit(rownames(.), "\\.", c("method", "measure", "parcel")))
+res.stroop %<>% rename(lb = V1, ub = V2, m = V3)
+
+res.stroop %>%
+  
+  ggplot(aes(parcel, m)) +
+  
+  geom_hline(yintercept = 0) +
+  geom_point() +
+  geom_errorbar(aes(ymin = lb, ymax = ub)) +
+  
+  facet_grid(cols = vars(method, measure)) +
+
+  # theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
+  
+  coord_flip()
+
+
+```
+
 
 ## (b) noise ceilings
 
-* dmcc34
+
+
+```{r}
+
+## crossvalidated measures ----
+
+## standardize measures within subjects
+
+## euclidean and normalized euclidean
+
+cross.eucls <- cross[, , , , , c("eucl", "neuc"), ]
+
+for (row.i in seq_len(nrow(cross.eucls))) {
+  for (col.j in seq_len(ncol(cross.eucls))) {
+    if (row.i <= col.j) cross.eucls[row.i, col.j, , , , , ] <- NA
+  }
+}
+
+cross.eucls <- cross.eucls %>%
+  reshape2::melt(value.name = "simil", na.rm = TRUE) %>%
+  mutate(method = "cross")
+cross.eucls <- cross.eucls %>% group_by(norma, parcel, subj) %>% mutate(simil.sd = simil / sd(simil))
+
+## add factor cols ----
+
+## bind and add factor cols
+
+cross.eucls$network <- ""  ## add networks
+for (network.i in networks) cross.eucls$network[grepl(network.i, cross.eucls$parcel)] <- network.i
+
+cross.eucls$parcel.num <- match(cross.eucls$parcel, parcellation$key)
+
+cross.eucls <- cross.eucls %>%   
+  ungroup %>%
+  mutate(
+    hemi = substr(parcel, 1, 1),
+    num.roi = match(parcel, parcellation$key)
+  )
+
+noise.ceilings <- cross.eucls %>%
+  
+  group_by(.row, .col, norma, parcel, measure, method, session) %>%
+  mutate(best.model = mean(simil.sd)) %>%
+  
+  group_by(norma, parcel, subj, measure, network, session) %>%
+  summarize(ub = cor(best.model, simil.sd))
+
+
+noise.ceilings %>%
+  
+  group_by(parcel, measure, network, norma, session) %>%
+  summarize(ub = mean(ub)) %>%
+  
+  pivot_wider(names_from = "norma", values_from = "ub") %>%
+  
+  ggplot(aes(raw, prw)) +
+  geom_abline() +
+  geom_point(aes(color = match(parcel, parcellation$key) %in% dmcc34)) +
+  
+  geom_point(
+    data = . %>% group_by(measure) %>% summarize(prw = mean(prw), raw = mean(raw)),
+    size = 5 
+  ) +
+  geom_point(
+    data = . 
+      %>% filter(match(parcel, parcellation$key) %in% dmcc34)
+      %>% group_by(measure) %>% summarize(prw = mean(prw), raw = mean(raw)),
+    size = 5,
+    color = "red"
+  ) +
+
+  facet_grid(vars(session), vars(measure)) +
+  
+  scale_color_manual(values = c("TRUE" = "red", "FALSE" = "grey50"), name = "in dmcc34")
+
+```
 
