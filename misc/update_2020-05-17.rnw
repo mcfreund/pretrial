@@ -1,0 +1,211 @@
+\documentclass{article}
+
+\usepackage{amsmath,amssymb}
+\usepackage[margin =0.51in]{geometry}
+\usepackage{enumitem}
+\usepackage{parskip}
+\usepackage{hyperref}
+
+\begin{document}
+
+\title{Pretrial analysis: thoughts and issues}
+\author{mike freund}
+\date{\today}
+\maketitle
+
+
+\section*{hypotheses}
+
+\begin{itemize}
+  \item During mostly incongruent lists (proactive), subjects are preparing in advance of stimulus onset for the occurrence of an incongruent stimulus
+  \item In contrast, during mostly congruent lists (baseline), no preparation occurs.
+  \item Neural coding underlying this preparation is to some degree abstract, i.e., generalizes across particular stimuli (e.g., bias items or PC50 items).
+  \item Neural coding underlying this preparation involves predictive coding of congruency---i.e., a `pre-activation' of target-evoked congruency representations.
+\end{itemize}
+
+
+\section*{approach}
+
+Approach problem via ``temporal generalization'' method.
+See ADD REF.
+
+\begin{itemize}
+  \item Train decoders at different TRs peri-stimulus onset to classify incongruent versus congruent patterns.
+  \item Test each decoder at each TR.
+  \item Use continuous measure of decoding strength / classifier evidence; e.g., distance to bound.
+  \item Arrange results in TR by TR confusion matrix.
+\end{itemize}
+
+
+
+<<fig.height = 4, fig.width = 9, echo = FALSE, warning = FALSE, message = FALSE>>=
+
+knitr::opts_chunk$set(
+  echo = FALSE, warning = FALSE, message = FALSE,
+  fig.align = 'center'
+)
+
+library(ggplot2)
+library(grid)
+library(gridExtra)
+library(cowplot)
+library(reshape2)
+library(dplyr)
+library(magrittr)
+
+## functions ----
+
+build_matrix <- function(d) {
+  
+  matrix(
+    rnorm(nrow(d)^2, 1), 
+    nrow(d), nrow(d), 
+    dimnames = list(
+      .row = apply(d, 1, paste0, collapse = "_"), 
+      .col = apply(d, 1, paste0, collapse = "_")
+    )
+  )
+  
+}
+
+plot_matrix <- function(d) {
+  
+  d %>% 
+    
+    mutate(
+      train = factor(train, levels = rev(unique(train))),
+      # test = as.factor(test),
+      test = as.factor(test)
+      ) %>%
+    ggplot(aes(test, train)) +
+    geom_tile(aes(fill = value), color = "grey20") +
+    
+    scale_fill_gradient(low = "black", high = "white") +
+    theme_bw(base_size = 8) +
+    theme(legend.position = "none", panel.grid = element_blank())
+  
+}
+
+tri2sym <- function(m, fun = lower.tri) {
+  
+  mt <- t(m)
+  mt[fun(mt)] <- m[fun(m)]
+  t(mt)
+  
+}
+
+tr.label <- -2:16
+
+empty <- matrix(0, length(tr.label), length(tr.label))
+
+rownames(empty) <- tr.label
+colnames(empty) <- tr.label
+names(dimnames(empty)) <- c("train", "test")
+
+bas <- empty
+
+bas["2", c("2", "3", "4", "5", "6", "7", "8")] <- 0.1
+bas[c("2", "3", "4", "5", "6", "7", "8"), "2"] <- 0.1
+
+bas[c("3", "4"), c("3", "4")] <- 1
+bas[c("5", "6"), c("5", "6")] <- 0.9
+bas[c("5", "6"), c("3", "4")] <- 0.8
+bas[c("3", "4"), c("5", "6")] <- 0.8
+
+bas[c("7", "8"), c("7", "8")] <- 0.75
+bas[c("7", "8"), c("5", "6")] <- 0.5
+bas[c("5", "6"), c("7", "8")] <- 0.6
+bas[c("7", "8"), c("3", "4")] <- 0.5
+bas[c("3", "4"), c("7", "8")] <- 0.6
+
+pro <- bas
+pro[c("3", "4"), c("-2", "-1", "0", "1", "2")] <- 0.5
+pro[c("5", "6"), c("-2", "-1", "0", "1", "2")] <- 0.4
+pro[c("7", "8"), c("-2", "-1", "0", "1", "2")] <- 0.3
+
+grid.arrange(
+  
+  melt(bas) %>%
+    plot_matrix() + 
+    scale_x_discrete(position = "top") + 
+    theme(legend.position = "right") +
+    guides(fill = guide_legend(title = "distance to\nIncon--Congr\nbound")) +
+    labs(title = "baseline"),
+  
+  melt(pro) %>%
+    plot_matrix() + 
+    scale_x_discrete(position = "top") + 
+    theme(legend.position = "right") +
+    guides(fill = guide_legend(title = "distance to\nIncon--Congr\nbound")) +
+    labs(title = "proactive"),
+  
+  ncol = 2
+  
+)
+
+
+@
+
+
+\begin{itemize}
+  \item Rows indicate the TR / knot at which the decoder was TRAINED; Cols indicate the TR / knot at which the decoder was TESTED.
+  \item ``Target knots'' (i.e., peak $\text{high} = \text{low}$ univariate resonse) assumed to be TRs 3 and 4.
+\end{itemize}
+
+
+% pretrial analyses
+% ---
+% 
+% issues
+% 	- diffs in template strength btw bas and pro
+% 	- method:
+% 		model-free (SVM / LDA / Corr)
+% 			train: run 1, I--C
+% 			test: detrended resids run 2 across trials
+% 				- split: prev I prev C
+% 		model-based
+% 			- pretrial knots estimated
+% 				->
+% 			- regressors split by prev I and prev C
+% 			train: run 1, I--C, all TRs
+% 			test: run 2, I--C, all TRs
+% 			
+
+\section*{plan}
+
+\begin{itemize}
+  \item glm-free versus glm-based method
+    
+    \begin{itemize}
+      \item assess prev*current trial.type counts per session*subj*run
+      \item  build xmats with extended event models (1tr1knot); experiment with number of pretrial TRs and duration of events --- colliniarity?
+    \end{itemize}
+    
+  \item if glm-based method viable
+  
+  \begin{itemize}
+    \item fit baseline and event model
+    \item generate diagonal.
+    linear discriminant function: project 'unlabeled' beta pattern vectors. 
+    negate congruent patterns, so positive indicates (correct) distance from bound. 
+    validate with correlation decoder; difference between templates.
+    should observe clear peak at target TRs. 
+    make list of ROIs.
+    \item generate off-diagonals.
+  \end{itemize}
+  
+  \item if glm-based method not viable.
+  
+  \begin{itemize}
+    \item ...
+    \item 
+    \item 
+  \end{itemize}
+  
+\end{itemize}
+
+
+
+
+
+\end{document}

@@ -6,20 +6,23 @@ output:
   html_document:
     toc: true
     highlight: zenburn
+knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_file = file.path(dirname(inputFile), "rois_rsa_crossvalidated_eucl_raw.html")) })
 
 ---
 
 ```{r setup, include = FALSE}
 
-measure.i <- "neuc"
-norma.i <- "raw"
+measure.i <- "eucl"
+norma.i <- "prw"
+glm.i <- "1tr1knot"
+
 
 knitr::opts_chunk$set(
   cache = FALSE, echo = FALSE, warning = FALSE, message = FALSE,
   fig.align = 'center',
   fig.width = 11.5, fig.fullwidth = TRUE,
-  cache.path = paste0(measure.i, "/cache/"),
-  fig.path = paste0(measure.i, "/figs/")
+  cache.path = paste0(measure.i, "_", norma.i, "/cache/"),
+  fig.path = paste0(measure.i, "_", norma.i, "/figs/")
 )
 
 set.seed(0)
@@ -193,39 +196,31 @@ cross %<>%
   mutate(simils = simil / sd(simil))
 
 
-cross %<>% filter(glm == "2tr1knot")
+cross %<>% filter(glm == glm.i)
 
-# ## stats ----
-# 
-# # vanil.pc50.parcel.contrast <- vanil.pc50 %>%
-#   cross %>%
-#   group_by(session, network, tr, subj, parcel, celltype, glm, parcel.num) %>%
-#   summarize(simil = mean(simil)) %>%  ## average within celltype
-#   
-#   pivot_wider(names_from = "celltype", values_from = "simil") %>%  ## get contrast
-#   mutate(simil.contrast = I_I - I_C)
-# 
-# vanil.pc50.dmcc34 <- vanil.pc50 %>% filter(parcel.num %in% dmcc34)
+
+cross$cell <- paste0(cross$.row, "_", cross$.col)
+
 
 ```
 
 
 # about
 
-<!-- 1. A cursory vanilla RSA on baseline and proactive data, PC50 items. -->
-<!-- 2. Identify a set of ROIs via RSA, separately in baseline and proactive, that respond to incongruency status. -->
+A cursory cross-validated RSA on baseline and proactive data.
 
-<!-- * __subjs__: -->
+* __subjs__: `r length(subjs.analysis)`; `r subjs.analysis`
 
-<!-- * __similarity measures__: -->
+* __similarity measures__: `r measure.i`
 
-<!-- * __glms__: -->
+* __normalization__: `r norma.i`
 
-<!-- * __sessions__: -->
+* __glms__: `r glm.i`
 
-<!-- * __conditons / trial types__: -->
+* __sessions__: baseline and proactive
 
-`r norma.i`, `r measure.i`
+* __conditons / trial types__: all trial types (PC50 and bias)
+
 
 
 # data at a glance
@@ -296,15 +291,15 @@ grid.arrange(
 
 __Mean (whole-brain) similarity matrices (2tr1knot only):__
 
-```{r matrices, fig.height = 10}
+```{r matrices, fig.height = 5}
 
-allsim.2tr1knot.bas <- apply(cross.2tr1knot[, , "raw", , , , "baseline"], c(".row", ".col"), mean)
-allsim.2tr1knot.pro <- apply(cross.2tr1knot[, , "raw", , , , "proactive"], c(".row", ".col"), mean)
+allsim.1tr1knot.bas <- apply(cross.1tr1knot[, , "raw", , , , "baseline"], c(".row", ".col"), mean)
+allsim.1tr1knot.pro <- apply(cross.1tr1knot[, , "raw", , , , "proactive"], c(".row", ".col"), mean)
 
 grid.arrange(
   
-  plot_matrix(allsim.2tr1knot.bas) + labs(title = "baseline"),
-  plot_matrix(allsim.2tr1knot.pro) + labs(title = "proactive"),
+  plot_matrix(allsim.1tr1knot.bas) + labs(title = "baseline"),
+  plot_matrix(allsim.1tr1knot.pro) + labs(title = "proactive"),
   
   ncol = 2
   
@@ -313,250 +308,2271 @@ grid.arrange(
 ```
 
 
+# All cells
 
-# Models
+#### by network
+
+Aggregated over parcels within network
+
+```{r allcells_curves_network, fig.height = 12}
+
+p.allcells.network.m <- cross %>%
+  
+  group_by(session, network, tr, subj, cell) %>%
+  summarize(m = mean(simils)) %>%  ## average across parcels
+  
+  ggplot(aes(tr, m, fill = session, color = session)) +
+  geom_hline(yintercept = 0) +
+  stat_summary(fun.data = "mean_cl_boot", geom = "ribbon", alpha = 0.25) +
+  stat_summary(fun.y = "mean", geom = "line", size = 1) +
+  
+  facet_grid(vars(network), vars(cell)) +
+  
+  scale_fill_brewer(type = "qual", palette = 2) +
+  scale_color_brewer(type = "qual", palette = 2) +
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "bottom") +
+  labs(
+    title = "All cells, means", 
+    y = "mean difference", 
+    caption = "bands: bootstrapped 95% CI of across-subject mean"
+    )
+
+p.allcells.network.t <- cross %>%
+  
+  group_by(session, network, tr, cell, subj) %>%
+  summarize(m = mean(simils)) %>%  ## average across parcels
+  
+  summarize(t.stat = t.test(m, alternative = "greater")$statistic) %>%
+
+  ggplot(aes(tr, t.stat, fill = session, color = session)) +
+  geom_hline(yintercept = 0) +
+  geom_hline(yintercept = 2, linetype = "dashed", color = "grey50") +
+  geom_line(size = 2) +
+
+  facet_grid(vars(network), vars(cell)) +
+  
+  scale_fill_brewer(type = "qual", palette = 2) +
+  scale_color_brewer(type = "qual", palette = 2) +
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "bottom") +
+  labs(
+    title = "Stroop main effect, stats", 
+    y = "t statistic",
+    caption = "dashed line at t = 2"
+    )
+
+# grid.arrange(p.allcells.network.m, p.allcells.network.t, ncol = 2)
+
+p.allcells.network.m
+
+p.allcells.network.t
+
+```
 
 
-## lists
 
-```{r, echo = TRUE}
+```{r wrangle_for_contrasts}
+
 
 cross.w <- cross
-cross.w$cell <- paste0(cross$.row, "_", cross$.col)
 cross.w[c(".row", ".col")] <- NULL
-cross.w <- dcast.data.table(
+
+cross.w <- dcast(
   as.data.table(cross.w),
-  knot + parcel + subj + session + glm + tr + network + parcel.num ~ cell, 
+  knot + parcel + subj + session + glm + tr + network + parcel.num ~ cell,
   value.var = "simils"
   )
 
-cross.w$stroop    <- with(cross.w, PC50Con_PC50InCon + biasCon_biasInCon) / 2
-cross.w$pc        <- with(cross.w, biasCon_PC50Con + biasInCon_PC50InCon) / 2
-cross.w$stroop.pc <- with(cross.w, biasCon_biasInCon - PC50Con_PC50InCon) / 2
-cross.w$pattconst <- with(
+# cross.w$stroop    <- with(cross.w, PC50Con_PC50InCon + biasCon_biasInCon) / 2
+# cross.w$pc        <- with(cross.w, biasCon_PC50Con + biasInCon_PC50InCon) / 2
+# cross.w$stroop.pc <- with(cross.w, biasCon_biasInCon - PC50Con_PC50InCon) / 2
+# cross.w$pattconst <- with(
+#   cross.w,
+#   (biasInCon_PC50InCon + biasCon_PC50Con) - (biasCon_PC50InCon + PC50Con_biasInCon)
+#     ) / 4
+
+
+## prep for plotting model matrices
+
+empty <- allsim.1tr1knot.pro
+empty[] <- 0
+
+
+```
+
+
+# Stroop contrasts
+
+
+
+## main effect
+
+* $\text{{between congruency}} - \text{{within congruency}}$
+
+* across levels of PC
+
+```{r stroop_main_effect_stats, fig.height = 5, fig.width = 7}
+
+## plot matrix ----
+
+m.stroop.me <- empty
+m.stroop.me[grepl("PC50Con|biasCon", conds), grepl("InCon", conds)] <- 1/4
+m.stroop.me[grepl("InCon", conds), grepl("PC50Con|biasCon", conds)] <- 1/4
+
+m.stroop.me[grepl("InCon", conds), grepl("InCon", conds)] <- -1/2
+m.stroop.me[grepl("PC50Con|biasCon", conds), grepl("PC50Con|biasCon", conds)] <- -1/2
+diag(m.stroop.me) <- 0
+
+m.stroop.me[lower.tri(m.stroop.me)] <- 0
+
+m.stroop.me %>% 
+  plot_matrix + 
+  theme(axis.text.x = element_text(), legend.position = "none") +
+  geom_text(aes(label = value), color = "firebrick", fontface = "bold", size = 10) +
+  labs(title = "stroop contrast: main effect")
+
+
+## calculate group stats ----
+
+cross.w$stroop.me <- with(
   cross.w, 
-  (biasInCon_PC50InCon + biasCon_PC50Con) - (biasCon_PC50InCon + PC50Con_biasInCon)
-    ) / 4
+    (PC50Con_PC50InCon + biasCon_biasInCon + 
+    biasCon_PC50InCon + PC50Con_biasInCon) / 4 -
+    (biasCon_PC50Con + biasInCon_PC50InCon) / 2
+  )
 
-# group <- cross.w %>%
-#   
-#   select(knot, parcel, subj, session, glm, tr, network, parcel.num, stroop, pc, stroop.pc, pattconst) %>%
-#   as.data.table %>%
-#   melt(measure.vars = c("stroop", "pc", "stroop.pc", "pattconst"), value.name = "contrast") %>%
-#   
-#   group_by(knot, parcel, tr, network, parcel.num, session, variable) %>%
+stroop.me <- cross.w %>%
 
-
-group.stroop <- cross.w %>% 
-  
   group_by(knot, parcel, tr, network, parcel.num, session) %>%
   summarize(
-    m = mean(stroop),
-    statistic = wilcox.test(stroop, alternative = "greater")$statistic,
-    p.value = wilcox.test(stroop, alternative = "greater")$p.value
+    m         = mean(stroop.me),
+    statistic = t.test(stroop.me, alternative = "greater")$statistic,
+    p.value   = t.test(stroop.me, alternative = "greater")$p.value
     ) %>%
   
   group_by(knot, session) %>%
   mutate(p.fdr = p.adjust(p.value))
 
 
-group.pc <- cross.w %>% 
+```
+
+### curves
+
+#### by network
+
+Aggregated over parcels within network
+
+```{r stroop_main_effect_curves_network, fig.height = 12}
+
+p.stroop.me.network.m <- cross.w %>%
   
+  group_by(session, network, tr, subj) %>%
+  summarize(stroop.me = mean(stroop.me)) %>%  ## average across parcels
+  
+  ggplot(aes(tr, stroop.me)) +
+  geom_hline(yintercept = 0) +
+  stat_summary(fun.data = "mean_cl_boot", geom = "ribbon", alpha = 0.25) +
+  stat_summary(fun.y = "mean", geom = "line", size = 1) +
+  
+  facet_grid(vars(network), vars(session)) +
+  
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "bottom") +
+  labs(
+    title = "Stroop main effect, means", 
+    y = "mean difference", 
+    caption = "bands: bootstrapped 95% CI of across-subject mean"
+    )
+
+p.stroop.me.network.t <- cross.w %>%
+  
+  group_by(session, network, tr, subj) %>%
+  summarize(stroop.me = mean(stroop.me)) %>%  ## average across parcels
+  
+  summarize(t.stat = t.test(stroop.me)$statistic) %>%
+
+  ggplot(aes(tr, t.stat)) +
+  geom_hline(yintercept = 0) +
+  geom_hline(yintercept = 2, linetype = "dashed", color = "grey50") +
+  geom_line(size = 2) +
+
+  facet_grid(vars(network), vars(session)) +
+  
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "bottom") +
+  labs(
+    title = "Stroop main effect, stats", 
+    y = "t statistic",
+    caption = "dashed line at t = 2"
+    )
+
+grid.arrange(p.stroop.me.network.m, p.stroop.me.network.t, ncol = 2)
+
+```
+
+#### by parcel
+
+```{r stroop_main_effect_curves_parcel, fig.height = 12}
+
+
+p.stroop.me.parcel.m <- cross.w %>%
+  
+  group_by(session, network, tr, parcel) %>%
+  summarize(stroop.me = mean(stroop.me)) %>%  ## average across parcels
+  
+  ggplot(aes(tr, stroop.me)) +
+  geom_hline(yintercept = 0) +
+  geom_line(aes(group = parcel), size = 1, alpha = 0.25) +
+  
+  facet_grid(vars(network), vars(session)) +
+  
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "bottom") +
+  labs(
+    title = "Stroop main effect, means", 
+    y = "mean difference",
+    caption = "aggregated over subjects w/in parcel"
+    )
+
+
+p.stroop.me.parcel.t <- stroop.me %>%
+  
+  group_by(session, network, parcel) %>%
+  mutate(is.sig = ifelse(any(p.fdr < 0.05), "p.fdr<0.05", "ns")) %>%
+  
+  ggplot(aes(tr, statistic)) +
+  geom_hline(yintercept = 0) +
+  geom_line(aes(group = parcel, alpha = is.sig), size = 1) +
+  
+  facet_grid(vars(network), vars(session)) +
+  
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "none") +
+  labs(
+    title = "Stroop main effect, stats", 
+    y = "t statistic",
+    caption = "dark lines are parcels with at least 1 TR with p.fdr < 0.05"
+    )
+
+grid.arrange(p.stroop.me.parcel.m, p.stroop.me.parcel.t, ncol = 2)
+
+
+```
+
+
+### brains
+
+* random intercept model fit to contrasts from TR 2--6
+
+* contrast ~ 1 + (1 | subj)
+
+* t values plotted on brains
+
+* thresholded at FDR corrected p-value (whole-brain), unless noted
+
+
+```{r stroop_main_effect_models}
+
+coef.stroop.me <- cross.w %>%
+  
+  filter(tr %in% 3:4) %>%
+  
+  group_by(session, network, parcel, parcel.num) %>%
+  summarize(statistic = t.test(stroop.me)$statistic, p.value = t.test(stroop.me)$p.value)
+
+## fit
+# 
+# cross.stroop.me.wl <- cross.w %>%
+#   filter(tr > 2, tr < 5) %>%
+#   split(paste(.$session, .$network, .$parcel, .$parcel.num, sep = "."))
+# 
+# fits.stroop.me <- lapply(cross.stroop.me.wl, function(x) lmer(stroop.me ~ 1 + (1 | subj), x))
+# 
+# ## extract
+# 
+# coef.stroop.me <- lapply(fits.stroop.me, tidy_lmer)
+# 
+# ## format
+# 
+# coef.stroop.me %<>%
+#   bind_rows(.id = "model.id") %>%
+#   cbind(reshape2::colsplit(.$model.id, "\\.", c("session", "network", "parcel", "parcel.num")))
+# 
+## adjust
+
+coef.stroop.me %<>%
+  group_by(session) %>%
+  mutate(p.fdr = p.adjust(p.value, "fdr"))
+
+## add cols for plotting
+
+coef.stroop.me %<>% mutate(hemi = substr(parcel, 1, 1))
+
+rois.stroop.me.bas <- coef.stroop.me %>% filter(statistic > 0, p.fdr < 0.05, session == "baseline") %>% pull(parcel)
+rois.stroop.me.pro <- coef.stroop.me %>% filter(statistic > 0, p.fdr < 0.05, session == "proactive") %>% pull(parcel)
+
+```
+
+* $\text{baseline} \cap \text{proactive}$: `r intersect(rois.stroop.me.bas, rois.stroop.me.pro)`
+
+#### unthresholded
+
+##### baseline
+
+```{r, stroop_main_effect_unthresh_baseline, fig.height = 7, fig.width = 11}
+
+coef.stroop.me %>%
+  
+  filter(session == "baseline") %>%
+  
+  build_overlay("statistic", "parcel.num", template = schaefer) %>%
+  
+  plot_surface(underlay = hcp, not.rstudio.gd = FALSE)
+
+```
+
+##### proactive
+
+```{r, stroop_main_effect_unthresh_proactive, fig.height = 7, fig.width = 11}
+
+coef.stroop.me %>%
+  
+  filter(session == "proactive") %>%
+  
+  build_overlay("statistic", "parcel.num", template = schaefer) %>%
+  
+  plot_surface(underlay = hcp, not.rstudio.gd = FALSE)
+
+```
+
+#### thresholded
+
+##### baseline
+
+```{r, stroop_main_effect_thresh_baseline, fig.height = 7, fig.width = 11}
+
+coef.stroop.me %>%
+  
+  filter(session == "baseline") %>%
+  
+  mutate(statistic = ifelse(p.fdr < 0.05, statistic, 0)) %>%
+  build_overlay("statistic", "parcel.num", template = schaefer) %>%
+  
+  plot_surface(underlay = hcp, not.rstudio.gd = FALSE)
+
+```
+
+##### proactive
+
+```{r, stroop_main_effect_thresh_proactive, fig.height = 7, fig.width = 11}
+
+coef.stroop.me %>%
+  
+  filter(session == "proactive") %>%
+  
+  mutate(statistic = ifelse(p.fdr < 0.05, statistic, 0)) %>%
+  build_overlay("statistic", "parcel.num", template = schaefer) %>%
+  
+  plot_surface(underlay = hcp, not.rstudio.gd = FALSE)
+
+```
+
+
+
+
+
+## within-PC
+
+* $\text{{between congruency, within PC}}$
+
+* within levels of PC; "pure" measure of Stroop effect
+
+
+```{r stroop_within_pc_stats, fig.height = 5, fig.width = 7}
+
+## plot matrix ----
+
+m.stroop.wpc <- empty
+m.stroop.wpc["PC50InCon", "PC50Con"] <- 1/2
+m.stroop.wpc["biasInCon", "biasCon"] <- 1/2
+
+m.stroop.wpc %>% 
+  plot_matrix + 
+  theme(axis.text.x = element_text(), legend.position = "none") +
+  geom_text(aes(label = value), color = "firebrick", fontface = "bold", size = 10) +
+  labs(title = "stroop contrast: within PC effect")
+
+
+## calculate group stats ----
+
+cross.w$stroop.wpc <- with(cross.w, (PC50Con_PC50InCon + biasCon_biasInCon) / 2)
+
+stroop.wpc <- cross.w %>%
+
   group_by(knot, parcel, tr, network, parcel.num, session) %>%
   summarize(
-    m = mean(pc),
-    statistic = wilcox.test(pc, alternative = "greater")$statistic,
-    p.value = wilcox.test(pc, alternative = "greater")$p.value
+    m         = mean(stroop.wpc),
+    statistic = t.test(stroop.wpc, alternative = "greater")$statistic,
+    p.value   = t.test(stroop.wpc, alternative = "greater")$p.value
     ) %>%
   
   group_by(knot, session) %>%
   mutate(p.fdr = p.adjust(p.value))
 
 
-group.pc.stroop <- cross.w %>% 
+```
+
+### curves
+
+#### by network
+
+Aggregated over parcels within network
+
+```{r stroop_within_pc_curves_network, fig.height = 12}
+
+p.stroop.wpc.network.m <- cross.w %>%
   
+  group_by(session, network, tr, subj) %>%
+  summarize(stroop.wpc = mean(stroop.wpc)) %>%  ## average across parcels
+  
+  ggplot(aes(tr, stroop.wpc)) +
+  geom_hline(yintercept = 0) +
+  stat_summary(fun.data = "mean_cl_boot", geom = "ribbon", alpha = 0.25) +
+  stat_summary(fun.y = "mean", geom = "line", size = 1) +
+  
+  facet_grid(vars(network), vars(session)) +
+  
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "bottom") +
+  labs(
+    title = "Stroop within PC, means", 
+    y = "mean difference", 
+    caption = "bands: bootstrapped 95% CI of across-subject mean"
+    )
+
+p.stroop.wpc.network.t <- cross.w %>%
+  
+  group_by(session, network, tr, subj) %>%
+  summarize(stroop.wpc = mean(stroop.wpc)) %>%  ## average across parcels
+  
+  summarize(t.stat = t.test(stroop.wpc)$statistic) %>%
+
+  ggplot(aes(tr, t.stat)) +
+  geom_hline(yintercept = 0) +
+  geom_hline(yintercept = 2, linetype = "dashed", color = "grey50") +
+  geom_line(size = 2) +
+
+  facet_grid(vars(network), vars(session)) +
+  
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "bottom") +
+  labs(
+    title = "Stroop within PC, stats", 
+    y = "t statistic",
+    caption = "dashed line at t = 2"
+    )
+
+grid.arrange(p.stroop.wpc.network.m, p.stroop.wpc.network.t, ncol = 2)
+
+```
+
+#### by parcel
+
+```{r stroop_within_pc_curves_parcel, fig.height = 12}
+
+
+p.stroop.wpc.parcel.m <- cross.w %>%
+  
+  group_by(session, network, tr, parcel) %>%
+  summarize(stroop.wpc = mean(stroop.wpc)) %>%  ## average across parcels
+  
+  ggplot(aes(tr, stroop.wpc)) +
+  geom_hline(yintercept = 0) +
+  geom_line(aes(group = parcel), size = 1, alpha = 0.25) +
+  
+  facet_grid(vars(network), vars(session)) +
+  
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "bottom") +
+  labs(
+    title = "Stroop within PC, means", 
+    y = "mean difference",
+    caption = "aggregated over subjects w/in parcel"
+    )
+
+
+p.stroop.wpc.parcel.t <- stroop.wpc %>%
+  
+  group_by(session, network, parcel) %>%
+  mutate(is.sig = ifelse(any(p.fdr < 0.05), "p.fdr<0.05", "ns")) %>%
+  
+  ggplot(aes(tr, statistic)) +
+  geom_hline(yintercept = 0) +
+  geom_line(aes(group = parcel, alpha = is.sig), size = 1) +
+  
+  facet_grid(vars(network), vars(session)) +
+  
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "none") +
+  labs(
+    title = "Stroop within PC, stats", 
+    y = "t statistic",
+    caption = "dark lines are parcels with at least 1 TR with p.fdr < 0.05"
+    )
+
+grid.arrange(p.stroop.wpc.parcel.m, p.stroop.wpc.parcel.t, ncol = 2)
+
+
+```
+
+
+### brains
+
+* random intercept model fit to contrasts from TR 2--6
+
+* contrast ~ 1 + (1 | subj)
+
+* t values plotted on brains
+
+* thresholded at FDR corrected p-value (whole-brain), unless noted
+
+
+```{r stroop_within_pc_models}
+
+coef.stroop.wpc <- cross.w %>%
+  
+  filter(tr %in% 3:4) %>%
+  
+  group_by(session, network, parcel, parcel.num) %>%
+  summarize(statistic = t.test(stroop.wpc)$statistic, p.value = t.test(stroop.wpc)$p.value)
+
+# ## fit
+# 
+# cross.stroop.wpc.wl <- cross.w %>%
+#   filter(tr > 2, tr < 5) %>%
+#   split(paste(.$session, .$network, .$parcel, .$parcel.num, sep = "."))
+# 
+# fits.stroop.wpc <- lapply(cross.stroop.wpc.wl, function(x) lmer(stroop.wpc ~ 1 + (1 | subj), x))
+# 
+# ## extract
+# 
+# coef.stroop.wpc <- lapply(fits.stroop.wpc, tidy_lmer)
+# 
+# ## format
+# 
+# coef.stroop.wpc %<>%
+#   bind_rows(.id = "model.id") %>%
+#   cbind(reshape2::colsplit(.$model.id, "\\.", c("session", "network", "parcel", "parcel.num")))
+
+## adjust
+
+coef.stroop.wpc %<>%
+  group_by(session) %>%
+  mutate(p.fdr = p.adjust(p.value, "fdr"))
+
+## add cols for plotting
+
+coef.stroop.wpc %<>% mutate(hemi = substr(parcel, 1, 1))
+
+rois.stroop.wpc.bas <- coef.stroop.wpc %>% filter(statistic > 0, p.fdr < 0.05, session == "baseline") %>% pull(parcel)
+rois.stroop.wpc.pro <- coef.stroop.wpc %>% filter(statistic > 0, p.fdr < 0.05, session == "proactive") %>% pull(parcel)
+
+```
+
+* $\text{baseline} \cap \text{proactive}$: `r intersect(rois.stroop.wpc.pro, rois.stroop.wpc.pro)`
+
+#### unthresholded
+
+##### baseline
+
+```{r, stroop_within_pc_unthresh_baseline, fig.height = 7, fig.width = 11}
+
+coef.stroop.wpc %>%
+  
+  filter(session == "baseline") %>%
+  
+  build_overlay("statistic", "parcel.num", template = schaefer) %>%
+  
+  plot_surface(underlay = hcp, not.rstudio.gd = FALSE)
+
+```
+
+##### proactive
+
+```{r, stroop_within_pc_unthresh_proactive, fig.height = 7, fig.width = 11}
+
+coef.stroop.wpc %>%
+  
+  filter(session == "proactive") %>%
+  
+  build_overlay("statistic", "parcel.num", template = schaefer) %>%
+  
+  plot_surface(underlay = hcp, not.rstudio.gd = FALSE)
+
+```
+
+#### thresholded
+
+##### baseline
+
+```{r, stroop_within_pc_thresh_baseline, fig.height = 7, fig.width = 11}
+
+coef.stroop.wpc %>%
+  
+  filter(session == "baseline") %>%
+  
+  mutate(statistic = ifelse(p.fdr < 0.05, statistic, 0)) %>%
+  build_overlay("statistic", "parcel.num", template = schaefer) %>%
+  
+  plot_surface(underlay = hcp, not.rstudio.gd = FALSE)
+
+```
+
+##### proactive
+
+```{r, stroop_within_pc_thresh_proactive, fig.height = 7, fig.width = 11}
+
+coef.stroop.wpc %>%
+  
+  filter(session == "proactive") %>%
+  
+  mutate(statistic = ifelse(p.fdr < 0.05, statistic, 0)) %>%
+  build_overlay("statistic", "parcel.num", template = schaefer) %>%
+  
+  plot_surface(underlay = hcp, not.rstudio.gd = FALSE)
+
+```
+
+
+
+
+
+
+## between PC
+
+* $\text{{between congruency, between PC} - {within congruency, between PC}}$
+
+* does congruency generalize across items/PC groups? 
+
+
+```{r stroop_between_pc_stats, fig.height = 5, fig.width = 7}
+
+## plot matrix ----
+
+m.stroop.bpc <- m.stroop.me
+m.stroop.bpc["biasInCon", "biasCon"] <- 0
+m.stroop.bpc["PC50InCon", "PC50Con"] <- 0
+m.stroop.bpc[m.stroop.bpc == 0.25] <- 0.5
+
+m.stroop.bpc %>% 
+  plot_matrix + 
+  theme(axis.text.x = element_text(), legend.position = "none") +
+  geom_text(aes(label = value), color = "firebrick", fontface = "bold", size = 10) +
+  labs(title = "stroop contrast: between PC effect")
+
+
+## calculate group stats ----
+
+cross.w$stroop.bpc <- 
+  with(
+    cross.w, 
+    (biasCon_PC50InCon + PC50Con_biasInCon) - (biasCon_PC50Con + biasInCon_PC50InCon)
+    ) / 2
+
+
+stroop.bpc <- cross.w %>%
+
   group_by(knot, parcel, tr, network, parcel.num, session) %>%
   summarize(
-    m = mean(stroop.pc),
-    statistic = wilcox.test(stroop.pc)$statistic,
-    p.value = wilcox.test(stroop.pc)$p.value
+    m         = mean(stroop.bpc),
+    statistic = t.test(stroop.bpc, alternative = "greater")$statistic,
+    p.value   = t.test(stroop.bpc, alternative = "greater")$p.value
     ) %>%
   
   group_by(knot, session) %>%
   mutate(p.fdr = p.adjust(p.value))
 
 
-group.pattconst <- cross.w %>% 
+```
+
+### curves
+
+#### by network
+
+Aggregated over parcels within network
+
+```{r stroop_between_pc_curves_network, fig.height = 12}
+
+p.stroop.bpc.network.m <- cross.w %>%
   
+  group_by(session, network, tr, subj) %>%
+  summarize(stroop.bpc = mean(stroop.bpc)) %>%  ## average across parcels
+  
+  ggplot(aes(tr, stroop.bpc)) +
+  geom_hline(yintercept = 0) +
+  stat_summary(fun.data = "mean_cl_boot", geom = "ribbon", alpha = 0.25) +
+  stat_summary(fun.y = "mean", geom = "line", size = 1) +
+  
+  facet_grid(vars(network), vars(session)) +
+  
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "bottom") +
+  labs(
+    title = "Stroop between PC, means", 
+    y = "mean difference", 
+    caption = "bands: bootstrapped 95% CI of across-subject mean"
+    )
+
+p.stroop.bpc.network.t <- cross.w %>%
+  
+  group_by(session, network, tr, subj) %>%
+  summarize(stroop.bpc = mean(stroop.bpc)) %>%  ## average across parcels
+  
+  summarize(t.stat = t.test(stroop.bpc)$statistic) %>%
+
+  ggplot(aes(tr, t.stat)) +
+  geom_hline(yintercept = 0) +
+  geom_hline(yintercept = 2, linetype = "dashed", color = "grey50") +
+  geom_line(size = 2) +
+
+  facet_grid(vars(network), vars(session)) +
+  
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "bottom") +
+  labs(
+    title = "Stroop between PC, stats", 
+    y = "t statistic",
+    caption = "dashed line at t = 2"
+    )
+
+grid.arrange(p.stroop.bpc.network.m, p.stroop.bpc.network.t, ncol = 2)
+
+```
+
+#### by parcel
+
+```{r stroop_between_pc_curves_parcel, fig.height = 12}
+
+
+p.stroop.bpc.parcel.m <- cross.w %>%
+  
+  group_by(session, network, tr, parcel) %>%
+  summarize(stroop.bpc = mean(stroop.bpc)) %>%  ## average across parcels
+  
+  ggplot(aes(tr, stroop.bpc)) +
+  geom_hline(yintercept = 0) +
+  geom_line(aes(group = parcel), size = 1, alpha = 0.25) +
+  
+  facet_grid(vars(network), vars(session)) +
+  
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "bottom") +
+  labs(
+    title = "Stroop between PC, means", 
+    y = "mean difference",
+    caption = "aggregated over subjects w/in parcel"
+    )
+
+
+p.stroop.bpc.parcel.t <- stroop.bpc %>%
+  
+  group_by(session, network, parcel) %>%
+  mutate(is.sig = ifelse(any(p.fdr < 0.05), "p.fdr<0.05", "ns")) %>%
+  
+  ggplot(aes(tr, statistic)) +
+  geom_hline(yintercept = 0) +
+  geom_line(aes(group = parcel, alpha = is.sig), size = 1) +
+  
+  facet_grid(vars(network), vars(session)) +
+  
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "none") +
+  labs(
+    title = "Stroop between PC, stats", 
+    y = "t statistic",
+    caption = "dark lines are parcels with at least 1 TR with p.fdr < 0.05"
+    )
+
+grid.arrange(p.stroop.bpc.parcel.m, p.stroop.bpc.parcel.t, ncol = 2)
+
+
+```
+
+
+### brains
+
+* random intercept model fit to contrasts from TR 2--6
+
+* contrast ~ 1 + (1 | subj)
+
+* t values plotted on brains
+
+* thresholded at FDR corrected p-value (whole-brain), unless noted
+
+
+```{r stroop_between_pc_models}
+
+coef.stroop.bpc <- cross.w %>%
+  
+  filter(tr %in% 3:4) %>%
+  
+  group_by(session, network, parcel, parcel.num) %>%
+  summarize(statistic = t.test(stroop.bpc)$statistic, p.value = t.test(stroop.bpc)$p.value)
+
+# ## fit
+# 
+# cross.stroop.bpc.wl <- cross.w %>%
+#   filter(tr > 2, tr < 5) %>%
+#   split(paste(.$session, .$network, .$parcel, .$parcel.num, sep = "."))
+# 
+# fits.stroop.bpc <- lapply(cross.stroop.bpc.wl, function(x) lmer(stroop.bpc ~ 1 + (1 | subj), x))
+# 
+# ## extract
+# 
+# coef.stroop.bpc <- lapply(fits.stroop.bpc, tidy_lmer)
+# 
+# ## format
+# 
+# coef.stroop.bpc %<>%
+#   bind_rows(.id = "model.id") %>%
+#   cbind(reshape2::colsplit(.$model.id, "\\.", c("session", "network", "parcel", "parcel.num")))
+# 
+## adjust
+
+coef.stroop.bpc %<>%
+  group_by(session) %>%
+  mutate(p.fdr = p.adjust(p.value, "fdr"))
+
+## add cols for plotting
+
+coef.stroop.bpc %<>% mutate(hemi = substr(parcel, 1, 1))
+
+rois.stroop.bpc.bas <- coef.stroop.bpc %>% filter(statistic > 0, p.fdr < 0.05, session == "baseline") %>% pull(parcel)
+rois.stroop.bpc.pro <- coef.stroop.bpc %>% filter(statistic > 0, p.fdr < 0.05, session == "proactive") %>% pull(parcel)
+
+```
+
+* $\text{baseline} \cap \text{proactive}$: `r intersect(rois.stroop.bpc.pro, rois.stroop.bpc.pro)`
+
+#### unthresholded
+
+##### baseline
+
+```{r, stroop_between_pc_unthresh_baseline, fig.height = 7, fig.width = 11}
+
+coef.stroop.bpc %>%
+  
+  filter(session == "baseline") %>%
+  
+  build_overlay("statistic", "parcel.num", template = schaefer) %>%
+  
+  plot_surface(underlay = hcp, not.rstudio.gd = FALSE)
+
+```
+
+##### proactive
+
+```{r, stroop_between_pc_unthresh_proactive, fig.height = 7, fig.width = 11}
+
+coef.stroop.bpc %>%
+  
+  filter(session == "proactive") %>%
+  
+  build_overlay("statistic", "parcel.num", template = schaefer) %>%
+  
+  plot_surface(underlay = hcp, not.rstudio.gd = FALSE)
+
+```
+
+#### thresholded
+
+##### baseline
+
+```{r, stroop_between_pc_thresh_baseline, fig.height = 7, fig.width = 11}
+
+coef.stroop.bpc %>%
+  
+  filter(session == "baseline") %>%
+  
+  mutate(statistic = ifelse(p.fdr < 0.05, statistic, 0)) %>%
+  build_overlay("statistic", "parcel.num", template = schaefer) %>%
+  
+  plot_surface(underlay = hcp, not.rstudio.gd = FALSE)
+
+```
+
+##### proactive
+
+```{r, stroop_between_pc_thresh_proactive, fig.height = 7, fig.width = 11}
+
+coef.stroop.bpc %>%
+  
+  filter(session == "proactive") %>%
+  
+  mutate(statistic = ifelse(p.fdr < 0.05, statistic, 0)) %>%
+  build_overlay("statistic", "parcel.num", template = schaefer) %>%
+  
+  plot_surface(underlay = hcp, not.rstudio.gd = FALSE)
+
+```
+
+
+
+
+
+
+
+# PC contrasts
+
+## main effect
+
+
+* $\text{{between PC} - {within PC}}$
+
+* across levels of congruency
+
+
+```{r pc_main_effect_stats, fig.height = 5, fig.width = 7}
+
+## plot matrix ----
+
+m.pc.me <- empty
+m.pc.me[grepl("PC50", conds), grepl("bias", conds)] <- 1/4
+m.pc.me[grepl("bias", conds), grepl("PC50", conds)] <- 1/4
+
+m.pc.me[grepl("bias", conds), grepl("bias", conds)] <- -1/2
+m.pc.me[grepl("PC50", conds), grepl("PC50", conds)] <- -1/2
+
+diag(m.pc.me) <- 0
+
+m.pc.me[lower.tri(m.pc.me)] <- 0
+
+m.pc.me %>% 
+  plot_matrix + 
+  theme(axis.text.x = element_text(), legend.position = "none") +
+  geom_text(aes(label = value), color = "firebrick", fontface = "bold", size = 10) +
+  labs(title = "pc contrast: main effect")
+
+
+## calculate group stats ----
+
+cross.w$pc.me <- with(
+  cross.w, 
+    (PC50Con_biasInCon + biasCon_PC50Con + biasCon_PC50InCon + biasInCon_PC50InCon) / 4 -
+    (PC50Con_PC50InCon + biasCon_biasInCon) / 2
+  )
+
+pc.me <- cross.w %>%
+
   group_by(knot, parcel, tr, network, parcel.num, session) %>%
   summarize(
-    m = mean(pattconst),
-    statistic = wilcox.test(pattconst)$statistic,
-    p.value = wilcox.test(pattconst)$p.value
+    m         = mean(pc.me),
+    statistic = t.test(pc.me, alternative = "greater")$statistic,
+    p.value   = t.test(pc.me, alternative = "greater")$p.value
     ) %>%
   
   group_by(knot, session) %>%
   mutate(p.fdr = p.adjust(p.value))
 
 
-group.session.x <- cross.w %>% 
+```
+
+### curves
+
+#### by network
+
+Aggregated over parcels within network
+
+```{r pc_main_effect_curves_network, fig.height = 12}
+
+p.pc.me.network.m <- cross.w %>%
   
-  select(knot, parcel, subj, session, PC50Con_PC50InCon) %>%
-  dcast(knot + parcel + subj ~ session, value.var = "PC50Con_PC50InCon") %>%
+  group_by(session, network, tr, subj) %>%
+  summarize(pc.me = mean(pc.me)) %>%  ## average across parcels
   
-  mutate(pro_bas = proactive - baseline) %>%
+  ggplot(aes(tr, pc.me)) +
+  geom_hline(yintercept = 0) +
+  stat_summary(fun.data = "mean_cl_boot", geom = "ribbon", alpha = 0.25) +
+  stat_summary(fun.y = "mean", geom = "line", size = 1) +
   
-  group_by(knot, parcel) %>%
+  facet_grid(vars(network), vars(session)) +
+  
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "bottom") +
+  labs(
+    title = "pc main effect, means", 
+    y = "mean difference", 
+    caption = "bands: bootstrapped 95% CI of across-subject mean"
+    )
+
+p.pc.me.network.t <- cross.w %>%
+  
+  group_by(session, network, tr, subj) %>%
+  summarize(pc.me = mean(pc.me)) %>%  ## average across parcels
+  
+  summarize(t.stat = t.test(pc.me)$statistic) %>%
+
+  ggplot(aes(tr, t.stat)) +
+  geom_hline(yintercept = 0) +
+  geom_hline(yintercept = 2, linetype = "dashed", color = "grey50") +
+  geom_line(size = 2) +
+
+  facet_grid(vars(network), vars(session)) +
+  
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "bottom") +
+  labs(
+    title = "pc main effect, stats", 
+    y = "t statistic",
+    caption = "dashed line at t = 2"
+    )
+
+grid.arrange(p.pc.me.network.m, p.pc.me.network.t, ncol = 2)
+
+```
+
+#### by parcel
+
+```{r pc_main_effect_curves_parcel, fig.height = 12}
+
+
+p.pc.me.parcel.m <- cross.w %>%
+  
+  group_by(session, network, tr, parcel) %>%
+  summarize(pc.me = mean(pc.me)) %>%  ## average across parcels
+  
+  ggplot(aes(tr, pc.me)) +
+  geom_hline(yintercept = 0) +
+  geom_line(aes(group = parcel), size = 1, alpha = 0.25) +
+  
+  facet_grid(vars(network), vars(session)) +
+  
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "bottom") +
+  labs(
+    title = "pc main effect, means", 
+    y = "mean difference",
+    caption = "aggregated over subjects w/in parcel"
+    )
+
+
+p.pc.me.parcel.t <- pc.me %>%
+  
+  group_by(session, network, parcel) %>%
+  mutate(is.sig = ifelse(any(p.fdr < 0.05), "p.fdr<0.05", "ns")) %>%
+  
+  ggplot(aes(tr, statistic)) +
+  geom_hline(yintercept = 0) +
+  geom_line(aes(group = parcel, alpha = is.sig), size = 1) +
+  
+  facet_grid(vars(network), vars(session)) +
+  
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "none") +
+  labs(
+    title = "pc main effect, stats", 
+    y = "t statistic",
+    caption = "dark lines are parcels with at least 1 TR with p.fdr < 0.05"
+    )
+
+grid.arrange(p.pc.me.parcel.m, p.pc.me.parcel.t, ncol = 2)
+
+
+```
+
+
+### brains
+
+* random intercept model fit to contrasts from TR 2--6
+
+* contrast ~ 1 + (1 | subj)
+
+* t values plotted on brains
+
+* thresholded at FDR corrected p-value (whole-brain), unless noted
+
+
+```{r pc_main_effect_models}
+
+coef.pc.me <- cross.w %>%
+  
+  filter(tr %in% 3:4) %>%
+  
+  group_by(session, network, parcel, parcel.num) %>%
+  summarize(statistic = t.test(pc.me)$statistic, p.value = t.test(pc.me)$p.value)
+
+# ## fit
+# 
+# cross.pc.me.wl <- cross.w %>%
+#   filter(tr > 2, tr < 5) %>%
+#   split(paste(.$session, .$network, .$parcel, .$parcel.num, sep = "."))
+# 
+# fits.pc.me <- lapply(cross.pc.me.wl, function(x) lmer(pc.me ~ 1 + (1 | subj), x))
+# 
+# ## extract
+# 
+# coef.pc.me <- lapply(fits.pc.me, tidy_lmer)
+# 
+# ## format
+# 
+# coef.pc.me %<>%
+#   bind_rows(.id = "model.id") %>%
+#   cbind(reshape2::colsplit(.$model.id, "\\.", c("session", "network", "parcel", "parcel.num")))
+# 
+## adjust
+
+coef.pc.me %<>%
+  group_by(session) %>%
+  mutate(p.fdr = p.adjust(p.value, "fdr"))
+
+## add cols for plotting
+
+coef.pc.me %<>% mutate(hemi = substr(parcel, 1, 1))
+
+```
+
+#### unthresholded
+
+##### baseline
+
+```{r, pc_main_effect_unthresh_baseline, fig.height = 7, fig.width = 11}
+
+coef.pc.me %>%
+  
+  filter(session == "baseline") %>%
+  
+  build_overlay("statistic", "parcel.num", template = schaefer) %>%
+  
+  plot_surface(underlay = hcp, not.rstudio.gd = FALSE)
+
+```
+
+##### proactive
+
+```{r, pc_main_effect_unthresh_proactive, fig.height = 7, fig.width = 11}
+
+coef.pc.me %>%
+  
+  filter(session == "proactive") %>%
+  
+  build_overlay("statistic", "parcel.num", template = schaefer) %>%
+  
+  plot_surface(underlay = hcp, not.rstudio.gd = FALSE)
+
+```
+
+#### thresholded
+
+##### baseline
+
+```{r, pc_main_effect_thresh_baseline, fig.height = 7, fig.width = 11}
+
+coef.pc.me %>%
+  
+  filter(session == "baseline") %>%
+  
+  mutate(statistic = ifelse(p.fdr < 0.05, statistic, 0)) %>%
+  build_overlay("statistic", "parcel.num", template = schaefer) %>%
+  
+  plot_surface(underlay = hcp, not.rstudio.gd = FALSE)
+
+```
+
+##### proactive
+
+```{r, pc_main_effect_thresh_proactive, fig.height = 7, fig.width = 11}
+
+coef.pc.me %>%
+  
+  filter(session == "proactive") %>%
+  
+  mutate(statistic = ifelse(p.fdr < 0.05, statistic, 0)) %>%
+  build_overlay("statistic", "parcel.num", template = schaefer) %>%
+  
+  plot_surface(underlay = hcp, not.rstudio.gd = FALSE)
+
+```
+
+
+
+
+
+
+
+## within stroop
+
+* $\text{{between PC, within stroop}}$
+
+* within levels of stroop; "pure" measure of PC effect
+
+
+```{r pc_within_pc_stats, fig.height = 5, fig.width = 7}
+
+## plot matrix ----
+
+m.pc.wstroop <- empty
+m.pc.wstroop["PC50InCon", "biasInCon"] <- 1/2
+m.pc.wstroop["PC50Con", "biasCon"] <- 1/2
+
+m.pc.wstroop %>% 
+  plot_matrix + 
+  theme(axis.text.x = element_text(), legend.position = "none") +
+  geom_text(aes(label = value), color = "firebrick", fontface = "bold", size = 10) +
+  labs(title = "pc contrast: within PC effect")
+
+
+## calculate group stats ----
+
+cross.w$pc.wstroop <- with(cross.w, (biasCon_PC50Con + biasInCon_PC50InCon) / 2)
+
+pc.wstroop <- cross.w %>%
+
+  group_by(knot, parcel, tr, network, parcel.num, session) %>%
   summarize(
-    m = mean(pro_bas),
-    statistic = wilcox.test(pro_bas)$statistic,
-    p.value = wilcox.test(pro_bas)$p.value
+    m         = mean(pc.wstroop),
+    statistic = t.test(pc.wstroop, alternative = "greater")$statistic,
+    p.value   = t.test(pc.wstroop, alternative = "greater")$p.value
+    ) %>%
+  
+  group_by(knot, session) %>%
+  mutate(p.fdr = p.adjust(p.value))
+
+
+```
+
+### curves
+
+#### by network
+
+Aggregated over parcels within network
+
+```{r pc_within_pc_curves_network, fig.height = 12}
+
+p.pc.wstroop.network.m <- cross.w %>%
+  
+  group_by(session, network, tr, subj) %>%
+  summarize(pc.wstroop = mean(pc.wstroop)) %>%  ## average across parcels
+  
+  ggplot(aes(tr, pc.wstroop)) +
+  geom_hline(yintercept = 0) +
+  stat_summary(fun.data = "mean_cl_boot", geom = "ribbon", alpha = 0.25) +
+  stat_summary(fun.y = "mean", geom = "line", size = 1) +
+  
+  facet_grid(vars(network), vars(session)) +
+  
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "bottom") +
+  labs(
+    title = "pc within PC, means", 
+    y = "mean difference", 
+    caption = "bands: bootstrapped 95% CI of across-subject mean"
+    )
+
+p.pc.wstroop.network.t <- cross.w %>%
+  
+  group_by(session, network, tr, subj) %>%
+  summarize(pc.wstroop = mean(pc.wstroop)) %>%  ## average across parcels
+  
+  summarize(t.stat = t.test(pc.wstroop)$statistic) %>%
+
+  ggplot(aes(tr, t.stat)) +
+  geom_hline(yintercept = 0) +
+  geom_hline(yintercept = 2, linetype = "dashed", color = "grey50") +
+  geom_line(size = 2) +
+
+  facet_grid(vars(network), vars(session)) +
+  
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "bottom") +
+  labs(
+    title = "pc within PC, stats", 
+    y = "t statistic",
+    caption = "dashed line at t = 2"
+    )
+
+grid.arrange(p.pc.wstroop.network.m, p.pc.wstroop.network.t, ncol = 2)
+
+```
+
+#### by parcel
+
+```{r pc_within_pc_curves_parcel, fig.height = 12}
+
+
+p.pc.wstroop.parcel.m <- cross.w %>%
+  
+  group_by(session, network, tr, parcel) %>%
+  summarize(pc.wstroop = mean(pc.wstroop)) %>%  ## average across parcels
+  
+  ggplot(aes(tr, pc.wstroop)) +
+  geom_hline(yintercept = 0) +
+  geom_line(aes(group = parcel), size = 1, alpha = 0.25) +
+  
+  facet_grid(vars(network), vars(session)) +
+  
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "bottom") +
+  labs(
+    title = "pc within PC, means", 
+    y = "mean difference",
+    caption = "aggregated over subjects w/in parcel"
+    )
+
+
+p.pc.wstroop.parcel.t <- pc.wstroop %>%
+  
+  group_by(session, network, parcel) %>%
+  mutate(is.sig = ifelse(any(p.fdr < 0.05), "p.fdr<0.05", "ns")) %>%
+  
+  ggplot(aes(tr, statistic)) +
+  geom_hline(yintercept = 0) +
+  geom_line(aes(group = parcel, alpha = is.sig), size = 1) +
+  
+  facet_grid(vars(network), vars(session)) +
+  
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "none") +
+  labs(
+    title = "pc within PC, stats", 
+    y = "t statistic",
+    caption = "dark lines are parcels with at least 1 TR with p.fdr < 0.05"
+    )
+
+grid.arrange(p.pc.wstroop.parcel.m, p.pc.wstroop.parcel.t, ncol = 2)
+
+
+```
+
+
+### brains
+
+* random intercept model fit to contrasts from TR 2--6
+
+* contrast ~ 1 + (1 | subj)
+
+* t values plotted on brains
+
+* thresholded at FDR corrected p-value (whole-brain), unless noted
+
+
+```{r pc_within_pc_models}
+
+coef.pc.wstroop <- cross.w %>%
+  
+  filter(tr %in% 3:4) %>%
+  
+  group_by(session, network, parcel, parcel.num) %>%
+  summarize(statistic = t.test(pc.wstroop)$statistic, p.value = t.test(pc.wstroop)$p.value)
+
+# ## fit
+# 
+# cross.pc.wstroop.wl <- cross.w %>%
+#   filter(tr > 2, tr < 5) %>%
+#   split(paste(.$session, .$network, .$parcel, .$parcel.num, sep = "."))
+# 
+# fits.pc.wstroop <- lapply(cross.pc.wstroop.wl, function(x) lmer(pc.wstroop ~ 1 + (1 | subj), x))
+# 
+# ## extract
+# 
+# coef.pc.wstroop <- lapply(fits.pc.wstroop, tidy_lmer)
+# 
+# ## format
+# 
+# coef.pc.wstroop %<>%
+#   bind_rows(.id = "model.id") %>%
+#   cbind(reshape2::colsplit(.$model.id, "\\.", c("session", "network", "parcel", "parcel.num")))
+# 
+## adjust
+
+coef.pc.wstroop %<>%
+  group_by(session) %>%
+  mutate(p.fdr = p.adjust(p.value, "fdr"))
+
+## add cols for plotting
+
+coef.pc.wstroop %<>% mutate(hemi = substr(parcel, 1, 1))
+
+```
+
+#### unthresholded
+
+##### baseline
+
+```{r, pc_within_pc_unthresh_baseline, fig.height = 7, fig.width = 11}
+
+coef.pc.wstroop %>%
+  
+  filter(session == "baseline") %>%
+  
+  build_overlay("statistic", "parcel.num", template = schaefer) %>%
+  
+  plot_surface(underlay = hcp, not.rstudio.gd = FALSE)
+
+```
+
+##### proactive
+
+```{r, pc_within_pc_unthresh_proactive, fig.height = 7, fig.width = 11}
+
+coef.pc.wstroop %>%
+  
+  filter(session == "proactive") %>%
+  
+  build_overlay("statistic", "parcel.num", template = schaefer) %>%
+  
+  plot_surface(underlay = hcp, not.rstudio.gd = FALSE)
+
+```
+
+#### thresholded
+
+##### baseline
+
+```{r, pc_within_pc_thresh_baseline, fig.height = 7, fig.width = 11}
+
+coef.pc.wstroop %>%
+  
+  filter(session == "baseline") %>%
+  
+  mutate(statistic = ifelse(p.fdr < 0.05, statistic, 0)) %>%
+  build_overlay("statistic", "parcel.num", template = schaefer) %>%
+  
+  plot_surface(underlay = hcp, not.rstudio.gd = FALSE)
+
+```
+
+##### proactive
+
+```{r, pc_within_pc_thresh_proactive, fig.height = 7, fig.width = 11}
+
+coef.pc.wstroop %>%
+  
+  filter(session == "proactive") %>%
+  
+  mutate(statistic = ifelse(p.fdr < 0.05, statistic, 0)) %>%
+  build_overlay("statistic", "parcel.num", template = schaefer) %>%
+  
+  plot_surface(underlay = hcp, not.rstudio.gd = FALSE)
+
+```
+
+
+
+
+
+
+## between stroop
+
+* $\text{{between PC, between congruency} - {within PC, between congruency}}$
+
+* does PC effect generalize across congruency? 
+
+
+```{r pc_between_stroop_stats, fig.height = 5, fig.width = 7}
+
+## plot matrix ----
+
+m.pc.bstroop <- m.pc.me
+m.pc.bstroop["PC50InCon", "biasInCon"] <- 0
+m.pc.bstroop["PC50Con", "biasCon"] <- 0
+m.pc.bstroop[m.pc.bstroop == 0.25] <- 0.5
+
+m.pc.bstroop %>% 
+  plot_matrix + 
+  theme(axis.text.x = element_text(), legend.position = "none") +
+  geom_text(aes(label = value), color = "firebrick", fontface = "bold", size = 10) +
+  labs(title = "pc contrast: between stroop effect")
+
+
+## calculate group stats ----
+
+cross.w$pc.bstroop <- 
+  with(
+    cross.w, 
+    (PC50Con_biasInCon + biasCon_PC50InCon) - (PC50Con_PC50InCon + biasCon_biasInCon)
+    ) / 2
+
+
+pc.bstroop <- cross.w %>%
+
+  group_by(knot, parcel, tr, network, parcel.num, session) %>%
+  summarize(
+    m         = mean(pc.bstroop),
+    statistic = t.test(pc.bstroop, alternative = "greater")$statistic,
+    p.value   = t.test(pc.bstroop, alternative = "greater")$p.value
+    ) %>%
+  
+  group_by(knot, session) %>%
+  mutate(p.fdr = p.adjust(p.value))
+
+
+```
+
+### curves
+
+#### by network
+
+Aggregated over parcels within network
+
+```{r pc_between_stroop_curves_network, fig.height = 12}
+
+p.pc.bstroop.network.m <- cross.w %>%
+  
+  group_by(session, network, tr, subj) %>%
+  summarize(pc.bstroop = mean(pc.bstroop)) %>%  ## average across parcels
+  
+  ggplot(aes(tr, pc.bstroop)) +
+  geom_hline(yintercept = 0) +
+  stat_summary(fun.data = "mean_cl_boot", geom = "ribbon", alpha = 0.25) +
+  stat_summary(fun.y = "mean", geom = "line", size = 1) +
+  
+  facet_grid(vars(network), vars(session)) +
+  
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "bottom") +
+  labs(
+    title = "pc between PC, means", 
+    y = "mean difference", 
+    caption = "bands: bootstrapped 95% CI of across-subject mean"
+    )
+
+p.pc.bstroop.network.t <- cross.w %>%
+  
+  group_by(session, network, tr, subj) %>%
+  summarize(pc.bstroop = mean(pc.bstroop)) %>%  ## average across parcels
+  
+  summarize(t.stat = t.test(pc.bstroop)$statistic) %>%
+
+  ggplot(aes(tr, t.stat)) +
+  geom_hline(yintercept = 0) +
+  geom_hline(yintercept = 2, linetype = "dashed", color = "grey50") +
+  geom_line(size = 2) +
+
+  facet_grid(vars(network), vars(session)) +
+  
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "bottom") +
+  labs(
+    title = "pc between PC, stats", 
+    y = "t statistic",
+    caption = "dashed line at t = 2"
+    )
+
+grid.arrange(p.pc.bstroop.network.m, p.pc.bstroop.network.t, ncol = 2)
+
+```
+
+#### by parcel
+
+```{r pc_between_stroop_curves_parcel, fig.height = 12}
+
+
+p.pc.bstroop.parcel.m <- cross.w %>%
+  
+  group_by(session, network, tr, parcel) %>%
+  summarize(pc.bstroop = mean(pc.bstroop)) %>%  ## average across parcels
+  
+  ggplot(aes(tr, pc.bstroop)) +
+  geom_hline(yintercept = 0) +
+  geom_line(aes(group = parcel), size = 1, alpha = 0.25) +
+  
+  facet_grid(vars(network), vars(session)) +
+  
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "bottom") +
+  labs(
+    title = "pc between PC, means", 
+    y = "mean difference",
+    caption = "aggregated over subjects w/in parcel"
+    )
+
+
+p.pc.bstroop.parcel.t <- pc.bstroop %>%
+  
+  group_by(session, network, parcel) %>%
+  mutate(is.sig = ifelse(any(p.fdr < 0.05), "p.fdr<0.05", "ns")) %>%
+  
+  ggplot(aes(tr, statistic)) +
+  geom_hline(yintercept = 0) +
+  geom_line(aes(group = parcel, alpha = is.sig), size = 1) +
+  
+  facet_grid(vars(network), vars(session)) +
+  
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "none") +
+  labs(
+    title = "pc between PC, stats", 
+    y = "t statistic",
+    caption = "dark lines are parcels with at least 1 TR with p.fdr < 0.05"
+    )
+
+grid.arrange(p.pc.bstroop.parcel.m, p.pc.bstroop.parcel.t, ncol = 2)
+
+
+```
+
+
+### brains
+
+* random intercept model fit to contrasts from TR 2--6
+
+* contrast ~ 1 + (1 | subj)
+
+* t values plotted on brains
+
+* thresholded at FDR corrected p-value (whole-brain), unless noted
+
+
+```{r pc_between_stroop_models}
+
+coef.pc.bstroop <- cross.w %>%
+  
+  filter(tr %in% 3:4) %>%
+  
+  group_by(session, network, parcel, parcel.num) %>%
+  summarize(statistic = t.test(pc.bstroop)$statistic, p.value = t.test(pc.bstroop)$p.value)
+
+# ## fit
+# 
+# cross.pc.bstroop.wl <- cross.w %>%
+#   filter(tr > 2, tr < 5) %>%
+#   split(paste(.$session, .$network, .$parcel, .$parcel.num, sep = "."))
+# 
+# fits.pc.bstroop <- lapply(cross.pc.bstroop.wl, function(x) lmer(pc.bstroop ~ 1 + (1 | subj), x))
+# 
+# ## extract
+# 
+# coef.pc.bstroop <- lapply(fits.pc.bstroop, tidy_lmer)
+# 
+# ## format
+# 
+# coef.pc.bstroop %<>%
+#   bind_rows(.id = "model.id") %>%
+#   cbind(reshape2::colsplit(.$model.id, "\\.", c("session", "network", "parcel", "parcel.num")))
+# 
+## adjust
+
+coef.pc.bstroop %<>%
+  group_by(session) %>%
+  mutate(p.fdr = p.adjust(p.value, "fdr"))
+
+## add cols for plotting
+
+coef.pc.bstroop %<>% mutate(hemi = substr(parcel, 1, 1))
+
+```
+
+#### unthresholded
+
+##### baseline
+
+```{r, pc_between_stroop_unthresh_baseline, fig.height = 7, fig.width = 11}
+
+coef.pc.bstroop %>%
+  
+  filter(session == "baseline") %>%
+  
+  build_overlay("statistic", "parcel.num", template = schaefer) %>%
+  
+  plot_surface(underlay = hcp, not.rstudio.gd = FALSE)
+
+```
+
+##### proactive
+
+```{r, pc_between_stroop_unthresh_proactive, fig.height = 7, fig.width = 11}
+
+coef.pc.bstroop %>%
+  
+  filter(session == "proactive") %>%
+  
+  build_overlay("statistic", "parcel.num", template = schaefer) %>%
+  
+  plot_surface(underlay = hcp, not.rstudio.gd = FALSE)
+
+```
+
+#### thresholded
+
+##### baseline
+
+```{r, pc_between_stroop_thresh_baseline, fig.height = 7, fig.width = 11}
+
+coef.pc.bstroop %>%
+  
+  filter(session == "baseline") %>%
+  
+  mutate(statistic = ifelse(p.fdr < 0.05, statistic, 0)) %>%
+  build_overlay("statistic", "parcel.num", template = schaefer) %>%
+  
+  plot_surface(underlay = hcp, not.rstudio.gd = FALSE)
+
+```
+
+##### proactive
+
+```{r, pc_between_stroop_thresh_proactive, fig.height = 7, fig.width = 11}
+
+coef.pc.bstroop %>%
+  
+  filter(session == "proactive") %>%
+  
+  mutate(statistic = ifelse(p.fdr < 0.05, statistic, 0)) %>%
+  build_overlay("statistic", "parcel.num", template = schaefer) %>%
+  
+  plot_surface(underlay = hcp, not.rstudio.gd = FALSE)
+
+```
+
+
+
+
+
+
+# Interaction contrasts
+
+
+## PC * STROOP
+
+* Is congruency effect greater in bias versus pc50 items?
+
+
+```{r stroop_pc_stats, fig.height = 5, fig.width = 7}
+
+## plot matrix ----
+
+m.stroop.pc <- empty
+m.stroop.pc["biasInCon", "biasCon"] <- 0.5
+m.stroop.pc["PC50InCon", "PC50Con"] <- -0.5
+
+# m.stroop.pc <- t(m.stroop.pc)
+
+m.stroop.pc %>% 
+  plot_matrix + 
+  theme(axis.text.x = element_text(), legend.position = "none") +
+  geom_text(aes(label = value), color = "firebrick", fontface = "bold", size = 10) +
+  labs(title = "stroop * pc interaction")
+
+
+## calculate group stats ----
+
+cross.w$stroop.pc <- with(cross.w, biasCon_biasInCon - PC50Con_PC50InCon) / 2
+
+stroop.pc <- cross.w %>%
+
+  group_by(knot, parcel, tr, network, parcel.num, session) %>%
+  summarize(
+    m         = mean(stroop.pc),
+    statistic = t.test(stroop.pc)$statistic,
+    p.value   = t.test(stroop.pc)$p.value
+    ) %>%
+  
+  group_by(knot, session) %>%
+  mutate(p.fdr = p.adjust(p.value))
+
+
+```
+
+### curves
+
+#### by network
+
+Aggregated over parcels within network
+
+```{r stroop_pc_curves_network, fig.height = 12}
+
+p.stroop.pc.network.m <- cross.w %>%
+  
+  group_by(session, network, tr, subj) %>%
+  summarize(stroop.pc = mean(stroop.pc)) %>%  ## average across parcels
+  
+  ggplot(aes(tr, stroop.pc)) +
+  geom_hline(yintercept = 0) +
+  stat_summary(fun.data = "mean_cl_boot", geom = "ribbon", alpha = 0.25) +
+  stat_summary(fun.y = "mean", geom = "line", size = 1) +
+  
+  facet_grid(vars(network), vars(session)) +
+  
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "bottom") +
+  labs(
+    title = "Stroop * pc interaction, means", 
+    y = "mean difference", 
+    caption = "bands: bootstrapped 95% CI of across-subject mean"
+    )
+
+p.stroop.pc.network.t <- cross.w %>%
+  
+  group_by(session, network, tr, subj) %>%
+  summarize(stroop.pc = mean(stroop.pc)) %>%  ## average across parcels
+  
+  summarize(t.stat = t.test(stroop.pc)$statistic) %>%
+
+  ggplot(aes(tr, t.stat)) +
+  geom_hline(yintercept = 0) +
+  geom_hline(yintercept = 2, linetype = "dashed", color = "grey50") +
+  geom_hline(yintercept = -2, linetype = "dashed", color = "grey50") +
+  geom_line(size = 2) +
+
+  facet_grid(vars(network), vars(session)) +
+  
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "bottom") +
+  labs(
+    title = "Stroop * pc interaction, stats", 
+    y = "t statistic",
+    caption = "dashed line at t = 2, -2"
+    )
+
+grid.arrange(p.stroop.pc.network.m, p.stroop.pc.network.t, ncol = 2)
+
+```
+
+#### by parcel
+
+```{r stroop_pc_curves_parcel, fig.height = 12}
+
+
+p.stroop.pc.parcel.m <- cross.w %>%
+  
+  group_by(session, network, tr, parcel) %>%
+  summarize(stroop.pc = mean(stroop.pc)) %>%  ## average across parcels
+  
+  ggplot(aes(tr, stroop.pc)) +
+  geom_hline(yintercept = 0) +
+  geom_line(aes(group = parcel), size = 1, alpha = 0.25) +
+  
+  facet_grid(vars(network), vars(session)) +
+  
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "bottom") +
+  labs(
+    title = "Stroop * pc interaction, means", 
+    y = "mean difference",
+    caption = "aggregated over subjects w/in parcel"
+    )
+
+
+p.stroop.pc.parcel.t <- stroop.pc %>%
+  
+  group_by(session, network, parcel) %>%
+  mutate(is.sig = ifelse(any(p.fdr < 0.05), "p.fdr<0.05", "ns")) %>%
+  
+  ggplot(aes(tr, statistic)) +
+  geom_hline(yintercept = 0) +
+  geom_line(aes(group = parcel, alpha = is.sig), size = 1) +
+  
+  facet_grid(vars(network), vars(session)) +
+  
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "none") +
+  labs(
+    title = "Stroop * pc interaction, stats", 
+    y = "t statistic",
+    caption = "dark lines are parcels with at least 1 TR with p.fdr < 0.05"
+    )
+
+grid.arrange(p.stroop.pc.parcel.m, p.stroop.pc.parcel.t, ncol = 2)
+
+
+```
+
+
+### brains
+
+* random intercept model fit to contrasts from TR 2--6
+
+* contrast ~ 1 + (1 | subj)
+
+* t values plotted on brains
+
+* thresholded at FDR corrected p-value (whole-brain), unless noted
+
+
+```{r stroop_pc_models}
+
+coef.stroop.pc <- cross.w %>%
+  
+  filter(tr %in% 3:4) %>%
+  
+  group_by(session, network, parcel, parcel.num) %>%
+  summarize(statistic = t.test(stroop.pc)$statistic, p.value = t.test(stroop.pc)$p.value)
+
+# ## fit
+# 
+# cross.stroop.pc.wl <- cross.w %>%
+#   filter(tr > 2, tr < 5) %>%
+#   split(paste(.$session, .$network, .$parcel, .$parcel.num, sep = "."))
+# 
+# fits.stroop.pc <- lapply(cross.stroop.pc.wl, function(x) lmer(stroop.pc ~ 1 + (1 | subj), x))
+# 
+# ## extract
+# 
+# coef.stroop.pc <- lapply(fits.stroop.pc, tidy_lmer)
+# 
+# ## format
+# 
+# coef.stroop.pc %<>%
+#   bind_rows(.id = "model.id") %>%
+#   cbind(reshape2::colsplit(.$model.id, "\\.", c("session", "network", "parcel", "parcel.num")))
+# 
+## adjust
+
+coef.stroop.pc %<>%
+  group_by(session) %>%
+  mutate(p.fdr = p.adjust(p.value, "fdr"))
+
+## add cols for plotting
+
+coef.stroop.pc %<>% mutate(hemi = substr(parcel, 1, 1))
+
+```
+
+#### unthresholded
+
+##### baseline
+
+```{r, stroop_pc_unthresh_baseline, fig.height = 7, fig.width = 11}
+
+coef.stroop.pc %>%
+  
+  filter(session == "baseline") %>%
+  
+  build_overlay("statistic", "parcel.num", template = schaefer) %>%
+  
+  plot_surface(underlay = hcp, not.rstudio.gd = FALSE)
+
+```
+
+##### proactive
+
+```{r, stroop_pc_unthresh_proactive, fig.height = 7, fig.width = 11}
+
+coef.stroop.pc %>%
+  
+  filter(session == "proactive") %>%
+  
+  build_overlay("statistic", "parcel.num", template = schaefer) %>%
+  
+  plot_surface(underlay = hcp, not.rstudio.gd = FALSE)
+
+```
+
+#### thresholded
+
+##### baseline
+
+```{r, stroop_pc_thresh_baseline, fig.height = 7, fig.width = 11}
+
+coef.stroop.pc %>%
+  
+  filter(session == "baseline") %>%
+  
+  mutate(statistic = ifelse(p.fdr < 0.05, statistic, 0)) %>%
+  build_overlay("statistic", "parcel.num", template = schaefer) %>%
+  
+  plot_surface(underlay = hcp, not.rstudio.gd = FALSE)
+
+```
+
+##### proactive
+
+p values uncorrected
+
+```{r, stroop_pc_thresh_proactive, fig.height = 7, fig.width = 11}
+
+coef.stroop.pc %>%
+  
+  filter(session == "proactive") %>%
+  
+  mutate(statistic = ifelse(p.value < 0.05, statistic, 0)) %>%
+  build_overlay("statistic", "parcel.num", template = schaefer) %>%
+  
+  # plot_surface(underlay = hcp)
+  plot_surface(underlay = hcp, not.rstudio.gd = FALSE)
+
+```
+
+
+
+
+## stroop * session | pc50
+
+* Is PC50 congruency effect reduced in proactive?
+
+
+```{r stroop_session_stats, fig.height = 5, fig.width = 7}
+
+## plot matrix ----
+
+m.stroop.session.bas <- empty
+m.stroop.session.pro <- empty
+m.stroop.session.bas["PC50InCon", "PC50Con"] <- 1
+m.stroop.session.pro["PC50InCon", "PC50Con"] <- -1
+
+# m.stroop.session <- t(m.stroop.session)
+
+grid.arrange(
+  
+  m.stroop.session.bas %>% 
+    plot_matrix + 
+    theme(axis.text.x = element_text(), legend.position = "none") +
+    geom_text(aes(label = value), color = "firebrick", fontface = "bold", size = 10) +
+    labs(title = "baseline"),
+  
+  m.stroop.session.pro %>% 
+    plot_matrix + 
+    theme(axis.text.x = element_text(), legend.position = "none") +
+    geom_text(aes(label = value), color = "firebrick", fontface = "bold", size = 10) +
+    labs(title = "proactive"),
+  
+  ncol = 2,
+  
+  top = textGrob("stroop * session", gp = gpar(fontsize = 20))
+  
+)
+
+
+## calculate group stats ----
+
+cross.x <- cross.w %>%
+  
+  select(subj, session, network, parcel, parcel.num, tr, knot, PC50Con_PC50InCon) %>%
+  pivot_wider(names_from = "session", values_from = "PC50Con_PC50InCon")
+  
+
+cross.x$stroop.session <- with(cross.x, baseline - proactive)
+
+stroop.session <- cross.x %>%
+
+  group_by(knot, parcel, tr, network, parcel.num) %>%
+  summarize(
+    m         = mean(stroop.session),
+    statistic = t.test(stroop.session)$statistic,
+    p.value   = t.test(stroop.session)$p.value
     ) %>%
   
   group_by(knot) %>%
   mutate(p.fdr = p.adjust(p.value))
 
 
-group.stroop %>% filter(p.fdr < 0.05) %>% as.data.frame
-group.pc %>% filter(p.fdr < 0.05) %>% as.data.frame
-group.pc.stroop %>% filter(p.fdr < 0.05) %>% as.data.frame
-group.pattconst %>% filter(p.fdr < 0.05) %>% as.data.frame
-group.session.x %>% filter(p.fdr < 0.05) %>% as.data.frame
+```
 
-## maximal dimensionality?
+### curves
 
-group.allcells <- cross.w %>% 
+#### by network
+
+Aggregated over parcels within network
+
+```{r stroop_session_curves_network, fig.height = 12}
+
+p.stroop.session.network.m <- cross.x %>%
   
-  group_by(knot, parcel, tr, network, parcel.num, session) %>%
-  summarize_at(
-    vars(PC50Con_PC50InCon:biasInCon_PC50InCon),
-    .funs = list(
-      m = mean,
-      statistic = ~wilcox.test(., alternative = "greater")$statistic,
-      p.value = ~wilcox.test(., alternative = "greater")$p.value
+  group_by(network, tr, subj) %>%
+  summarize(stroop.session = mean(stroop.session)) %>%  ## average across parcels
+  
+  ggplot(aes(tr, stroop.session)) +
+  geom_hline(yintercept = 0) +
+  stat_summary(fun.data = "mean_cl_boot", geom = "ribbon", alpha = 0.25) +
+  stat_summary(fun.y = "mean", geom = "line", size = 1) +
+  
+  facet_grid(vars(network)) +
+  
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "bottom") +
+  labs(
+    title = "stroop * session interaction, means", 
+    y = "mean difference", 
+    caption = "bands: bootstrapped 95% CI of across-subject mean"
     )
-  )
 
-group.allcells %<>%
+p.stroop.session.network.t <- cross.x %>%
   
-  group_by(knot, tr, session) %>%
-  mutate_at(
-    vars(ends_with("p.value")),
-    list(fdr = ~p.adjust(., method = "fdr"))
-  )
+  group_by(network, tr, subj) %>%
+  summarize(stroop.session = mean(stroop.session)) %>%  ## average across parcels
+  
+  summarize(t.stat = t.test(stroop.session)$statistic) %>%
 
-is.sig.fdr <- apply(group.allcells[grep("_fdr$", names(group.allcells))] < 0.05, 1, all)
-is.sig.uncorrected <- apply(group.allcells[grep("p.value$", names(group.allcells))] < 0.05, 1, all)
+  ggplot(aes(tr, t.stat)) +
+  geom_hline(yintercept = 0) +
+  geom_hline(yintercept = 2, linetype = "dashed", color = "grey50") +
+  geom_hline(yintercept = -2, linetype = "dashed", color = "grey50") +
+  geom_line(size = 2) +
 
-sum(is.sig.fdr)
-sum(is.sig.uncorrected)
+  facet_grid(vars(network)) +
+  
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "bottom") +
+  labs(
+    title = "stroop * session interaction, stats", 
+    y = "t statistic",
+    caption = "dashed line at t = 2, -2"
+    )
 
-group.allcells[
-  is.sig.uncorrected, 
-  c(
-    "knot", "tr", "parcel", "session", 
-    names(group.allcells)[grep("p.value$", names(group.allcells))]
-  )
-  ] %>%
-  as.data.frame
+grid.arrange(p.stroop.session.network.m, p.stroop.session.network.t, ncol = 2)
 
+```
+
+#### by parcel
+
+```{r stroop_session_curves_parcel, fig.height = 12}
+
+
+p.stroop.session.parcel.m <- cross.x %>%
+  
+  group_by(network, tr, parcel) %>%
+  summarize(stroop.session = mean(stroop.session)) %>%  ## average across parcels
+  
+  ggplot(aes(tr, stroop.session)) +
+  geom_hline(yintercept = 0) +
+  geom_line(aes(group = parcel), size = 1, alpha = 0.25) +
+  
+  facet_grid(vars(network)) +
+  
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "bottom") +
+  labs(
+    title = "stroop * session interaction, means", 
+    y = "mean difference",
+    caption = "aggregated over subjects w/in parcel"
+    )
+
+
+p.stroop.session.parcel.t <- stroop.session %>%
+  
+  group_by(network, parcel) %>%
+  mutate(is.sig = ifelse(any(p.fdr < 0.05), "p.fdr<0.05", "ns")) %>%
+  
+  ggplot(aes(tr, statistic)) +
+  geom_hline(yintercept = 0) +
+  geom_line(aes(group = parcel, alpha = is.sig), size = 1) +
+  
+  facet_grid(vars(network)) +
+  
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  
+  theme(legend.position = "none") +
+  labs(
+    title = "stroop * session interaction, stats", 
+    y = "t statistic",
+    caption = "dark lines are parcels with at least 1 TR with p.fdr < 0.05"
+    )
+
+grid.arrange(p.stroop.session.parcel.m, p.stroop.session.parcel.t, ncol = 2)
 
 
 ```
 
-## brains, baseline, knot 2 (target)
 
-### stroop
+### brains
 
-```{r, fig.height = 7, fig.width = 11}
+* random intercept model fit to contrasts from TR 2--6
 
-group.stroop %>%
+* contrast ~ 1 + (1 | subj)
+
+* t values plotted on brains
+
+* thresholded at FDR corrected p-value (whole-brain), unless noted
+
+
+```{r stroop_session_models}
+
+coef.stroop.session <- cross.x %>%
   
-  filter(knot == "knot2", session == "baseline") %>%
+  filter(tr %in% 3:4) %>%
   
-  mutate(
-    hemi = substr(parcel, 1, 1),
-    num.roi = match(parcel, parcellation$key),
-    statistic = ifelse(p.fdr < 0.05, m, 0)
-    ) %>%
-  
-  build_overlay("statistic", template = schaefer) %>%
-  plot_surface(underlay = hcp)
+  group_by(network, parcel, parcel.num) %>%
+  summarize(statistic = t.test(stroop.session)$statistic, p.value = t.test(stroop.session)$p.value)
+
+# ## fit
+# 
+# cross.stroop.session.wl <- cross.x %>%
+#   filter(tr > 2, tr < 5) %>%
+#   split(paste(.$network, .$parcel, .$parcel.num, sep = "."))
+# 
+# fits.stroop.session <- lapply(cross.stroop.session.wl, function(x) lmer(stroop.session ~ 1 + (1 | subj), x))
+# 
+# ## extract
+# 
+# coef.stroop.session <- lapply(fits.stroop.session, tidy_lmer)
+# 
+# ## format
+# 
+# coef.stroop.session %<>%
+#   bind_rows(.id = "model.id") %>%
+#   cbind(reshape2::colsplit(.$model.id, "\\.", c("network", "parcel", "parcel.num")))
+# 
+## adjust
+
+coef.stroop.session %<>%
+  mutate(p.fdr = p.adjust(p.value, "fdr"))
+
+## add cols for plotting
+
+coef.stroop.session %<>% mutate(hemi = substr(parcel, 1, 1))
 
 ```
 
-### PC
+#### unthresholded
 
-```{r}
 
-group.pc %>%
+```{r, stroop_session_unthresh, fig.height = 7, fig.width = 11}
+
+coef.stroop.session %>%
   
-  filter(knot == "knot2", session == "baseline") %>%
+  build_overlay("statistic", "parcel.num", template = schaefer) %>%
   
-  mutate(
-    hemi = substr(parcel, 1, 1),
-    num.roi = match(parcel, parcellation$key),
-    statistic = ifelse(p.fdr < 0.05, m, 0)
-    ) %>%
-  
-  build_overlay("statistic", template = schaefer) %>%
-  plot_surface(underlay = hcp)
+  plot_surface(underlay = hcp, not.rstudio.gd = FALSE)
 
 ```
 
-### pc * stroop
 
-```{r}
+#### thresholded
 
-group.pc.stroop %>%
+```{r, stroop_session_thresh, fig.height = 7, fig.width = 11}
+
+coef.stroop.session %>%
   
-  filter(knot == "knot2", session == "baseline") %>%
+  mutate(statistic = ifelse(p.fdr < 0.05, statistic, 0)) %>%
+  build_overlay("statistic", "parcel.num", template = schaefer) %>%
   
-  mutate(
-    hemi = substr(parcel, 1, 1),
-    num.roi = match(parcel, parcellation$key),
-    statistic = ifelse(p.fdr < 0.05, m, 0)
-    ) %>%
-  
-  build_overlay("statistic", template = schaefer) %>%
-  plot_surface(underlay = hcp)
+  plot_surface(underlay = hcp, not.rstudio.gd = FALSE)
 
 ```
 
-### pattern consistency
 
-```{r}
 
-group.pattconst %>%
-  
-  filter(knot == "knot2", session == "baseline") %>%
-  
-  mutate(
-    hemi = substr(parcel, 1, 1),
-    num.roi = match(parcel, parcellation$key),
-    statistic = ifelse(p.fdr < 0.05, m, 0)
-    ) %>%
-  
-  build_overlay("statistic", template = schaefer) %>%
-  plot_surface(underlay = hcp)
-
-```
-
-### session*stroop | pc50
-
-```{r}
-
-group.session.x %>%
-  
-  filter(knot == "knot2", session == "baseline") %>%
-  
-  mutate(
-    hemi = substr(parcel, 1, 1),
-    num.roi = match(parcel, parcellation$key),
-    statistic = ifelse(p.fdr < 0.05, statistic, 0)
-    ) %>%
-  
-  build_overlay("statistic", template = schaefer) %>%
-  plot_surface(underlay = hcp)
-
-```
