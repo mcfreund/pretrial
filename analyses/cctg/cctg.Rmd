@@ -1,0 +1,621 @@
+---
+title: 'Cross-condition temporal generalization'
+author: "mike freund"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    highlight: zenburn
+---
+
+```{r setup, include = FALSE}
+
+knitr::opts_chunk$set(
+  cache = TRUE, echo = FALSE, warning = FALSE, message = FALSE,
+  fig.align = 'center',
+  fig.width = 11.5, fig.fullwidth = TRUE,
+  cache.path = paste0(measure.i, "_", norma.i, "/cache/"),
+  fig.path = paste0(measure.i, "_", norma.i, "/figs/")
+)
+
+set.seed(0)
+
+library(here)
+library(magrittr)
+library(dplyr)
+library(tidyr)
+library(data.table)
+library(mikeutils)
+library(lme4)
+library(lmerTest)
+library(ggplot2)
+library(ggbeeswarm)
+library(ggridges)
+library(viridis)
+library(grid)
+library(gridExtra)
+library(cowplot)
+library(cifti)
+library(gifti)
+library(abind)
+
+source(here("src", "setup.R"))
+
+## settings ----
+
+theme_set(theme_minimal(base_size = 14))
+
+## functions ----
+
+plot_matrix <- function(d) {
+  
+  if (is.matrix(d)) d <- reshape2::melt(d)
+  
+  d %>%
+    mutate(test.tr = factor(test.tr, levels = rev(unique(test.tr)))) %>%
+    ggplot(aes(train.tr, test.tr, fill = value)) +
+    geom_tile() +
+    # scale_fill_viridis() +
+    scale_fill_gradient(low = "black", high = "white") +
+    theme(
+      # legend.position = "none", 
+      panel.grid = element_blank(), 
+      # panel.background = element_blank(),
+      axis.text.x = element_blank(),
+      # axis.ticks = element_blank(), 
+      axis.title = element_blank()
+      )
+
+}
+
+tidy_lmer <- function(x) {
+  coefs <- as.data.frame(coef(summary(x)))
+  coefs$term <- rownames(coefs)
+  dplyr::rename(coefs, estimate = "Estimate", se = "Std. Error", "statistic" = "t value", p.value = "Pr(>|t|)")
+}
+
+## data ----
+
+## parcel-wise similarity matrices
+
+cctg.discriminant <- 
+  abind(
+    readRDS(
+      here(
+        "out", "cctg", "matrix_discriminant_prw_shaefer400_baseline_Congruency_EVENTS_tentzero01210_censored.rds"
+        )
+      ),
+    readRDS(
+      here(
+        "out", "cctg", "matrix_discriminant_prw_shaefer400_proactive_Congruency_EVENTS_tentzero01210_censored.rds"
+        )
+      ),
+    rev.along = 0
+  )
+
+names(dimnames(cctg.discriminant)) <- c("train.tr", "test.tr", "train.cond", "test.cond", "parcel", "subj", "session")
+dimnames(cctg.discriminant)$session <- c("baseline", "proactive")
+
+cctg.template <- 
+  abind(
+    readRDS(
+      here(
+        "out", "cctg", "matrix_template_prw_shaefer400_baseline_Congruency_EVENTS_tentzero01210_censored.rds"
+        )
+      ),
+    readRDS(
+      here(
+        "out", "cctg", "matrix_template_prw_shaefer400_proactive_Congruency_EVENTS_tentzero01210_censored.rds"
+        )
+      ),
+    rev.along = 0
+  )
+
+names(dimnames(cctg.template)) <- c("train.tr", "test.tr", "train.cond", "test.cond", "parcel", "subj", "session")
+dimnames(cctg.template)$session <- c("baseline", "proactive")
+
+
+
+## filter subjs by those with data
+
+has.stats <- apply(cctg.template, "subj", function(.) !any(is.na(c(.))))
+subjs.with.stats <- names(has.stats)[has.stats]
+
+## TODO
+## these subjects do not have stats
+# setdiff(c(subjs.analysis, subjs.development), subjs.with.stats)
+## could be due to
+##  - no 3d+t gifti -> have RAs run
+##  - no beta gifti -> diagnose problem and fit
+
+subjs.analysis <- intersect(subjs.analysis, subjs.with.stats)
+subjs.development <- intersect(subjs.development, subjs.with.stats)
+subjs.bad <- intersect(subjs.bad, subjs.with.stats)
+
+
+## subset data ----
+
+cctg.template <- cctg.template[, , , , , subjs.analysis, ]
+cctg.discriminant <- cctg.discriminant[, , , , , subjs.analysis, ]
+
+## atlases ----
+
+hcp <- list(
+  L  = readGIfTI(
+    file.path(dir.atlas, "surf", "HCP_S1200_GroupAvg_v1", "S1200.L.midthickness_MSMAll.32k_fs_LR.surf.gii")
+  ),
+  R = readGIfTI(
+    file.path(dir.atlas, "surf", "HCP_S1200_GroupAvg_v1", "S1200.R.midthickness_MSMAll.32k_fs_LR.surf.gii")
+  )
+)
+
+over <- list(
+  L = parcellation$atlas[1:(nrow(parcellation$atlas) / 2)], 
+  R = parcellation$atlas[(nrow(parcellation$atlas) / 2):nrow(parcellation$atlas)]
+)
+
+schaefer <- list(
+  L = read_gifti2matrix(
+    file.path(dir.schaefer, "Schaefer2018_400Parcels_7Networks_order_L.label.gii")
+    ) %>% c,
+  R = read_gifti2matrix(
+    file.path(dir.schaefer, "Schaefer2018_400Parcels_7Networks_order_R.label.gii")
+    ) %>% c
+)
+
+## palettes ----
+
+# colors.glm <- c("2tr1knot" = "#d95f02", "1tr1knot" = "#1b9e77")
+# colors.celltype <- c(I_I = "#e41a1c", C_C = "#377eb8", I_C = "#4daf4a")
+
+## wrangle ----
+
+
+## transformations
+
+## unwrap to lower triangle vectors
+cctg.template.sym <- cctg.template
+for (ii in dimnames(cctg.template)$train.cond) {
+  for (jj in dimnames(cctg.template)$test.cond) {
+    for (kk in dimnames(cctg.template)$parcel) {
+      for (ll in dimnames(cctg.template)$subj) {
+        for (mm in dimnames(cctg.template)$session) {
+          cctg.template.sym[, , ii, jj, kk, ll, mm] <- fold(cctg.template.sym[, , ii, jj, kk, ll, mm])
+          # cctg.template.sym[, , ii, jj, kk, ll, mm][upper.tri(cctg.template.sym[, , ii, jj, kk, ll, mm])] <- NA
+        }
+      }
+    }
+  }
+}
+cctg.discrim.sym <- cctg.discriminant
+for (ii in dimnames(cctg.template)$train.cond) {
+  for (jj in dimnames(cctg.template)$test.cond) {
+    for (kk in dimnames(cctg.template)$parcel) {
+      for (ll in dimnames(cctg.template)$subj) {
+        for (mm in dimnames(cctg.template)$session) {
+          cctg.discrim.sym[, , ii, jj, kk, ll, mm] <- fold(cctg.discrim.sym[, , ii, jj, kk, ll, mm])
+          # cctg.discrim.sym[, , ii, jj, kk, ll, mm][upper.tri(cctg.discrim.sym[, , ii, jj, kk, ll, mm])] <- NA
+        }
+      }
+    }
+  }
+}
+
+cctg <- 
+  bind_rows(
+    cctg.template %>%
+      reshape2::melt(value.name = "d", na.rm = TRUE) %>% 
+      mutate(method = "template"),
+    cctg.discriminant %>%
+      reshape2::melt(value.name = "d", na.rm = TRUE) %>% 
+      mutate(method = "discriminant")
+  )
+
+cctg3 <- 
+  bind_rows(
+    cctg.template.sym[3, , , , , , ] %>%
+      reshape2::melt(value.name = "d") %>% 
+      mutate(method = "template"),
+    cctg.discrim.sym[3, , , , , , ] %>%
+      reshape2::melt(value.name = "d") %>% 
+      mutate(method = "discriminant")
+  )
+
+
+
+## bind and add factor cols
+
+cctg$network <- ""  ## add networks
+for (network.i in networks) cctg$network[grepl(network.i, cctg$parcel)] <- network.i
+
+cctg$condition <- ifelse(
+  cctg$train.cond == "PC50" & grepl("PC50", cctg$test.cond), "PC50",
+  ifelse(
+    cctg$train.cond == "bias" & grepl("bias", cctg$test.cond), "bias", 
+    "PC50-bias"
+  )
+)
+
+cctg %<>% mutate(parcel.num = match(parcel, parcellation$key))
+
+
+cctg3$network <- ""  ## add networks
+for (network.i in networks) cctg3$network[grepl(network.i, cctg3$parcel)] <- network.i
+
+cctg3$condition <- ifelse(
+  cctg3$train.cond == "PC50" & grepl("PC50", cctg3$test.cond), "PC50",
+  ifelse(
+    cctg3$train.cond == "bias" & grepl("bias", cctg3$test.cond), "bias", 
+    "PC50-bias"
+  )
+)
+
+cctg3 %<>% mutate(parcel.num = match(parcel, parcellation$key))
+
+
+```
+
+
+# about
+
+<!-- 1. A cursory vanilla RSA on baseline and proactive data, PC50 items. -->
+<!-- 2. Identify a set of ROIs via RSA, separately in baseline and proactive, that respond to incongruency status. -->
+
+<!-- * __subjs__: `r length(subjs.analysis)`; `r subjs.analysis` -->
+
+<!-- * __similarity measures__: `r measure.i` -->
+
+<!-- * __normalization__: `r norma.i` -->
+
+<!-- * __glms__: 2tr1knot, 1tr1knot -->
+
+<!-- * __sessions__: baseline only -->
+
+<!-- * __conditons / trial types__: PC50 items only -->
+
+
+# data at a glance
+
+
+```{r distributions, fig.height = 7}
+
+## https://cran.r-project.org/web/packages/ggridges/vignettes/introduction.html
+
+grid.arrange(
+  
+  cctg %>%
+    
+    ggplot(aes(d, y = network, fill = network, height = stat(density))) +
+    geom_density_ridges(stat = "density", alpha = 0.8, rel_min_height = 0.01) +
+    
+    facet_grid(vars(session, method)) +
+    scale_color_brewer(type = "qual") +
+    theme_minimal() +
+    theme(axis.text.y = element_text(vjust = 0), legend.position = "none"),
+  
+  cctg %>%
+    
+    ggplot(aes(network, d, fill = network)) +
+    geom_boxplot(width = 0.25, outlier.alpha = 0.5, outlier.size = 0.5) +
+    
+    facet_grid(vars(session, method)) +
+    scale_color_brewer(type = "qual") +
+    theme_minimal() +
+    theme(legend.position = "none"),
+  
+  ncol = 2
+  
+)
+
+```
+
+
+```{r matrices, fig.height = 10}
+
+## discriminant
+
+dmcc34.bas.incon <- apply(cctg.discriminant[, , "PC50", "PC50InCon", dmcc34, , "baseline"], c("train.tr", "test.tr"), mean)
+dmcc34.pro.incon <- apply(cctg.discriminant[, , "PC50", "PC50InCon", dmcc34, , "proactive"], c("train.tr", "test.tr"), mean)
+
+dmcc34.bas.congr <- apply(cctg.discriminant[, , "PC50", "PC50Con", dmcc34, , "baseline"], c("train.tr", "test.tr"), mean)
+dmcc34.pro.congr <- apply(cctg.discriminant[, , "PC50", "PC50Con", dmcc34, , "proactive"], c("train.tr", "test.tr"), mean)
+
+
+## supervised
+
+dmcc34.bas.sv <- dmcc34.bas.incon - dmcc34.bas.congr
+dmcc34.pro.sv <- dmcc34.pro.incon - dmcc34.pro.congr
+
+dmcc34.bas.us <- dmcc34.bas.incon + dmcc34.bas.congr
+dmcc34.pro.us <- dmcc34.pro.incon + dmcc34.pro.congr
+
+dmcc34.bas.sv <- fold(dmcc34.bas.sv)
+dmcc34.pro.sv <- fold(dmcc34.pro.sv)
+
+dmcc34.bas.us <- fold(dmcc34.bas.us)
+dmcc34.pro.us <- fold(dmcc34.pro.us)
+
+grid.arrange(
+  
+  plot_matrix(dmcc34.bas.sv) + scale_fill_gradient(low = "black", high = "white", limits = c(-0.3, 0.3)) + labs(title = "baseline, trial-evoked"),
+  plot_matrix(dmcc34.pro.sv) + scale_fill_gradient(low = "black", high = "white", limits = c(-0.3, 0.3)) + labs(title = "proactive, trial-evoked"),
+  plot_matrix(dmcc34.pro.sv - dmcc34.bas.sv) + 
+    scale_fill_gradient(low = "black", high = "white", limits = c(-0.3, 0.3)) + labs(title = "pro - bas, trial-evoked"),
+  
+  plot_matrix(dmcc34.bas.us) + labs(title = "baseline, pretrial") + scale_fill_gradient(low = "black", high = "white", limits = c(-0.3, 0.3)),
+  plot_matrix(dmcc34.pro.us) + labs(title = "proactive, pretrial") + scale_fill_gradient(low = "black", high = "white", limits = c(-0.3, 0.3)),
+  plot_matrix(dmcc34.pro.us - dmcc34.bas.us) + labs(title = "pro - bas, pretrial") +
+    scale_fill_gradient(low = "black", high = "white", limits = c(-0.3, 0.3)),
+  
+  ncol = 3
+  
+)
+
+## template
+
+dmcc34.bas.incon <- apply(cctg.template[, , "PC50", "PC50InCon", dmcc34, , "baseline"], c("train.tr", "test.tr"), mean)
+dmcc34.pro.incon <- apply(cctg.template[, , "PC50", "PC50InCon", dmcc34, , "proactive"], c("train.tr", "test.tr"), mean)
+
+dmcc34.bas.congr <- apply(cctg.template[, , "PC50", "PC50Con", dmcc34, , "baseline"], c("train.tr", "test.tr"), mean)
+dmcc34.pro.congr <- apply(cctg.template[, , "PC50", "PC50Con", dmcc34, , "proactive"], c("train.tr", "test.tr"), mean)
+
+## supervised
+
+dmcc34.bas.sv <- dmcc34.bas.incon - dmcc34.bas.congr
+dmcc34.pro.sv <- dmcc34.pro.incon - dmcc34.pro.congr
+
+dmcc34.bas.us <- dmcc34.bas.incon + dmcc34.bas.congr
+dmcc34.pro.us <- dmcc34.pro.incon + dmcc34.pro.congr
+
+dmcc34.bas.sv <- fold(dmcc34.bas.sv)
+dmcc34.pro.sv <- fold(dmcc34.pro.sv)
+
+dmcc34.bas.us <- fold(dmcc34.bas.us)
+dmcc34.pro.us <- fold(dmcc34.pro.us)
+
+grid.arrange(
+  
+  plot_matrix(dmcc34.bas.sv) + 
+    labs(title = "baseline, trial-evoked") + 
+    scale_fill_gradient(low = "black", high = "white", limits = c(-0.03, 0.03)),
+  plot_matrix(dmcc34.pro.sv) + 
+    labs(title = "proactive, trial-evoked") + 
+    scale_fill_gradient(low = "black", high = "white", limits = c(-0.03, 0.03)),
+  plot_matrix(dmcc34.pro.sv - dmcc34.bas.sv) + 
+    labs(title = "pro - bas, trial-evoked") + 
+    scale_fill_gradient(low = "black", high = "white", limits = c(-0.03, 0.03)),
+  
+  plot_matrix(dmcc34.bas.us) + 
+    labs(title = "baseline, pretrial") + 
+    scale_fill_gradient(low = "black", high = "white", limits = c(-0.03, 0.03)), 
+  plot_matrix(dmcc34.pro.us) + 
+    labs(title = "proactive, pretrial") + 
+    scale_fill_gradient(low = "black", high = "white", limits = c(-0.03, 0.03)),
+  plot_matrix(dmcc34.pro.us - dmcc34.bas.us) + 
+    labs(title = "pro - bas, pretrial") + 
+    scale_fill_gradient(low = "black", high = "white", limits = c(-0.03, 0.03)),
+  
+  ncol = 3
+  
+)
+
+
+## curves ----
+
+
+rois <- c(
+  "LH_Cont_Par_1", 
+  "LH_Cont_Par_4", 
+  "LH_Cont_pCun_1", 
+  "LH_Cont_PFCl_2", 
+  "LH_Default_PFC_10", 
+  "LH_Default_PFC_24", 
+  "LH_DorsAttn_Post_2", 
+  "LH_DorsAttn_Post_7", 
+  "LH_DorsAttn_PrCv_1", 
+  "LH_DorsAttn_PrCv_2", 
+  "LH_SalVentAttn_FrOperIns_4", 
+  "LH_SalVentAttn_FrOperIns_8", 
+  "LH_SalVentAttn_FrOperIns_9", 
+  "LH_SalVentAttn_Med_4", 
+  "LH_SomMot_11", 
+  "LH_SomMot_9", 
+  "LH_Vis_1", 
+  "LH_Vis_8", 
+  "RH_Cont_Par_4", 
+  "RH_Cont_PFCl_6", 
+  "RH_Cont_PFCl_8", 
+  "RH_Default_Temp_6", 
+  "RH_SalVentAttn_PFCl_1", 
+  "RH_SalVentAttn_TempOccPar_2", 
+  "RH_SalVentAttn_TempOccPar_4", 
+  "RH_SomMot_11", 
+  "RH_SomMot_12", 
+  "RH_SomMot_39", 
+  "RH_SomMot_9", 
+  "RH_Vis_30"
+)
+
+
+cctg3 %>%
+  
+  filter(train.cond == "PC50", grepl("PC50", .$test.cond), method == "discriminant", parcel %in% rois, parcel.num %in% dmcc34) %>%
+  
+  pivot_wider(names_from = "test.cond", values_from = "d") %>%
+  mutate(diff = PC50InCon - PC50Con, summ = PC50InCon + PC50Con) %>%
+  pivot_longer(c("diff", "summ"), names_to = "contrast", values_to = "d") %>%
+  
+  ggplot(aes(test.tr, d, fill = contrast)) +
+  geom_hline(yintercept = 0) +
+  stat_summary(fun.data = "mean_cl_boot", geom = "ribbon", alpha = 0.5) +
+  
+  facet_grid(vars(parcel), vars(session))
+
+
+cctg3 %>%
+  
+  filter(train.cond == "PC50", grepl("PC50", .$test.cond), method == "template", parcel %in% rois, parcel.num %in% dmcc34) %>%
+  
+  pivot_wider(names_from = "test.cond", values_from = "d") %>%
+  mutate(diff = PC50InCon - PC50Con, summ = PC50InCon + PC50Con) %>%
+  pivot_longer(c("diff", "summ"), names_to = "contrast", values_to = "d") %>%
+  
+  ggplot(aes(test.tr, d, fill = contrast)) +
+  geom_hline(yintercept = 0) +
+  stat_summary(fun.data = "mean_cl_boot", geom = "ribbon", alpha = 0.5) +
+  
+  facet_grid(vars(parcel), vars(session))
+
+
+
+```
+
+
+
+```{r}
+
+```
+
+
+
+```{r}
+
+cctg.sv <- cctg
+cctg.sv$d[cctg.sv$test.cond %in% c("PC50Con", "biasCon")] <- -cctg.sv$d[cctg.sv$test.cond %in% c("PC50Con", "biasCon")]
+
+group.tr34 <- cctg.sv %>%
+  
+  filter(
+    condition %in% c("PC50", "bias"), train.tr == test.tr
+    # (train.tr == 3 & test.tr == 3) | (train.tr == 4 & test.tr == 4)
+    ) %>%
+  
+  group_by(method, session, condition, network, parcel, parcel.num, train.tr, subj) %>%
+  
+  summarize(d = mean(d)) %>%
+  
+  summarize(
+    statistic = wilcox.test(d, alternative = "greater")$statistic,
+    p.value = wilcox.test(d, alternative = "greater")$p.value
+  ) %>%
+
+  group_by(method, session, condition, train.tr) %>%
+  
+  mutate(p.fdr = p.adjust(p.value))
+
+group.tr34 %>% filter(p.fdr < 0.05, condition == "PC50", session == "baseline")
+group.tr34 %>% filter(p.fdr < 0.05, condition == "PC50", session == "proactive")
+
+# group.tr34 %>% filter(p.fdr < 0.05, condition == "bias", session == "baseline") %>% View("tr3,4|bas, bias")
+# group.tr34 %>% filter(p.fdr < 0.05, condition == "bias", session == "proactive")
+
+
+
+
+group.tr34 <- cctg %>%
+  
+  filter(
+    condition %in% c("PC50", "bias"), train.tr %in% c("") == test.tr
+    # (train.tr == 3 & test.tr == 3) | (train.tr == 4 & test.tr == 4)
+    ) %>%
+  
+  group_by(method, session, condition, network, parcel, parcel.num, train.tr, subj) %>%
+  
+  summarize(d = mean(d)) %>%
+  
+  summarize(
+    statistic = wilcox.test(d, alternative = "greater")$statistic,
+    p.value = wilcox.test(d, alternative = "greater")$p.value
+  ) %>%
+
+  group_by(method, session, condition, train.tr) %>%
+  
+  mutate(p.fdr = p.adjust(p.value))
+
+group.tr34 %>% filter(p.fdr < 0.05, condition == "PC50", session == "baseline")
+group.tr34 %>% filter(p.fdr < 0.05, condition == "PC50", session == "proactive")
+
+## ----
+
+
+group.tr34.cross <- cctg %>%
+  
+  filter(
+    condition %in% c("PC50-bias"), 
+    (train.tr == 3 & test.tr == 3) | (train.tr == 4 & test.tr == 4)
+    ) %>%
+  
+  group_by(method, session, condition, network, parcel, parcel.num, subj) %>%
+  
+  summarize(d = mean(d)) %>%
+  
+  summarize(
+    statistic = wilcox.test(d, alternative = "greater")$statistic,
+    p.value = wilcox.test(d, alternative = "greater")$p.value
+  ) %>%
+
+  group_by(method, session, condition) %>%
+  
+  mutate(p.fdr = p.adjust(p.value))
+
+
+group.tr34.cross %>% filter(p.fdr < 0.05, session == "baseline") %>% View("tr3,4|bas, cross")
+group.tr34.cross %>% filter(p.fdr < 0.05, session == "proactive")
+
+
+## ---
+
+
+group.tr34.me <- cctg %>%
+  
+  filter(
+    (train.tr == 3 & test.tr == 3) | (train.tr == 4 & test.tr == 4)
+    ) %>%
+  
+  group_by(method, session, network, parcel, parcel.num, subj) %>%
+  
+  summarize(d = mean(d)) %>%
+  
+  summarize(
+    statistic = wilcox.test(d, alternative = "greater")$statistic,
+    p.value = wilcox.test(d, alternative = "greater")$p.value
+  ) %>%
+
+  group_by(method, session) %>%
+  
+  mutate(p.fdr = p.adjust(p.value))
+
+group.tr34.me %>% filter(p.fdr < 0.05, session == "baseline", method == "discriminant") %>% View("bas, discr, main eff")
+group.tr34.me %>% filter(p.fdr < 0.05, session == "proactive", method == "discriminant") %>% View("pro, discr, main eff")
+
+
+## ----
+
+group.tr31 <- cctg %>%
+  
+  filter(
+    (train.tr == 3 & test.tr == 1) | (train.tr == 1 & test.tr == 3)
+    ) %>%
+  
+  group_by(method, session, condition, network, parcel, parcel.num, subj) %>%
+  
+  summarize(d = mean(d)) %>%
+  
+  summarize(
+    statistic = wilcox.test(d, alternative = "greater")$statistic,
+    p.value = wilcox.test(d, alternative = "greater")$p.value
+  ) %>%
+
+  group_by(method, session, condition) %>%
+  
+  mutate(p.fdr = p.adjust(p.value))
+
+group.tr31 %>% filter(p.fdr < 0.05, session == "baseline", condition == "PC50")
+group.tr31 %>% filter(p.fdr < 0.05, session == "proactive", condition == "PC50")
+
+group.tr31 %>% filter(p.value < 0.01, session == "baseline", condition == "PC50") %>% View
+group.tr31 %>% filter(p.value < 0.01, session == "proactive", condition == "PC50") %>% View
+
+
+
+```

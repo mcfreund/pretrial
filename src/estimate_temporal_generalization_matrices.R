@@ -46,6 +46,8 @@ library(profvis)
 library(foreach)
 library(doParallel)
 
+source(here("src", "setup.R"))
+
 ## functions
 
 whitecor <- function(x, y, W) {
@@ -62,7 +64,8 @@ whitecor <- function(x, y, W) {
 
 ## variables
 
-n.cores <- detectCores()
+# n.cores <- detectCores()
+n.cores <- 14
 
 parcellation <- read_atlas("schaefer400")
 
@@ -84,6 +87,7 @@ regressors <- c("PC50InCon", "biasInCon", "PC50Con", "biasCon")
 normalizations <- c("prw")
 # rsatypes <- c("vanilla", "crossva")
 projtypes <- c("discriminant", "template")
+# projtypes <- c("discriminant")
 
 ## for tallying unresponsive voxels:
 # counts.silent <- as.data.table(expand.grid(subj = subjs, session = sessi, glm = glms, roi = parcellation$key))
@@ -112,7 +116,7 @@ for (sess.i in seq_along(sessi)) {
       train.tr   = n.knots[name.glm.i],
       test.tr    = n.knots[name.glm.i],
       train.cond = 2,
-      test.cond  = 2,
+      test.cond  = length(conds),
       projtypes  = length(projtypes),
       roi        = length(parcellation$key), 
       subj       = length(subjs)
@@ -121,7 +125,7 @@ for (sess.i in seq_along(sessi)) {
       train.tr = NULL,
       test.tr  = NULL,
       train.cond = c("PC50", "bias"),
-      test.cond  = c("PC50", "bias"),
+      test.cond  = conds,
       projtypes  = projtypes,
       roi      = parcellation$key, 
       subj     = subjs
@@ -228,6 +232,30 @@ for (sess.i in seq_along(sessi)) {
       
       n.vert <- ncol(betas.i)  ## number responsive vertices
       
+      ## regress stimulus-evoked component
+      
+      mean.pattern <- apply(betas.i[grepl("#[3-4]", rownames(betas.i)), , ], 2:3, mean)  ## use 'target' knots, TRs 3:4
+      mean.pattern.len <- sqrt(colSums((mean.pattern)^2))
+      mean.pattern <- sweep(mean.pattern, 2, mean.pattern.len, "/")  ## scale for projection
+      
+      for (run.i in seq_len(dim(betas.i)[3])) {
+        # run.i = 1
+        proj.i <- betas.i[, , run.i] %*% mean.pattern[, run.i] %*% mean.pattern[, run.i]
+        betas.i[, , run.i] <- betas.i[, , run.i] - proj.i
+      }
+      
+      ## z-score standardize
+      
+      for (cond.i in seq_len(nrow(betas.i))) {
+        for (run.i in seq_len(dim(betas.i)[3])) {
+          
+          m <- mean(betas.i[cond.i, , run.i])
+          s <- sd(betas.i[cond.i, , run.i])
+          betas.i[cond.i, , run.i] <- (betas.i[cond.i, , run.i] - m) / s
+          
+        }
+      }
+      
       ## initialize array slices
       
       a.subj.i.roi.i <- a[, , , , , 1, 1]
@@ -267,7 +295,7 @@ for (sess.i in seq_along(sessi)) {
         # train.cond.i = "PC50"
         
         for (test.cond.i in dimnames(a.subj.i.roi.i)$test.cond) {
-          # test.cond.i = "PC50"
+          # test.cond.i = "PC50InCon"
           
           for (train.tr.i in seq_len(n.knots)) {
             # train.tr.i = 1
@@ -282,16 +310,15 @@ for (sess.i in seq_along(sessi)) {
             W2 <- (whitened$run1$W2 + whitened$run1$W2) / 2  ## mean of inverse cov matrices
             
             m_dif <- betas.ii.train[1, , ] - betas.ii.train[2, , ]  ## I - C difference vector per run
-            
+            b <- W2 %*% m_dif  ## prewhiten
+            blen <- sqrt(colSums((b)^2))
+            b <- sweep(b, 2, blen, "/")  ## scale for projection
             m_bar <- (betas.ii.train[1, , ] + betas.ii.train[2, , ]) / 2  ## mean pattern vector per run
             
             for (test.tr.i in seq_len(n.knots)) {
               # test.tr.i = 1
               
-              rows.test <- c(
-                paste0(test.cond.i, "InCon#", test.tr.i - 1),
-                paste0(test.cond.i, "Con#", test.tr.i - 1)
-              )
+              rows.test <- paste0(test.cond.i, "#", test.tr.i - 1)
               
               betas.ii.test <- betas.i[rows.test, , ]
               
@@ -299,36 +326,23 @@ for (sess.i in seq_along(sessi)) {
               
               ## projection onto discriminant method
               
-              b_len <- sqrt(colSums(m_dif^2))
-              
-              proj.incon1 <- m_dif[, "run2"] %*% W2 %*% (betas.ii.test[1, , "run1"] - m_bar[, "run2"]) / b_len["run2"] 
-              proj.incon2 <- m_dif[, "run1"] %*% W2 %*% (betas.ii.test[1, , "run2"] - m_bar[, "run1"]) / b_len["run1"]
-              
-              proj.congr1 <- m_dif[, "run2"] %*% W2 %*% (betas.ii.test[2, , "run1"] - m_bar[, "run2"]) / b_len["run2"]
-              proj.congr2 <- m_dif[, "run1"] %*% W2 %*% (betas.ii.test[2, , "run2"] - m_bar[, "run1"]) / b_len["run1"]
+              proj.incon1 <- b[, "run2"] %*% (betas.ii.test[, "run1"] - m_bar[, "run2"])
+              proj.incon2 <- b[, "run1"] %*% (betas.ii.test[, "run2"] - m_bar[, "run1"])
               
               a.subj.i.roi.i[train.tr.i, test.tr.i, train.cond.i, test.cond.i, "discriminant"] <- 
-                mean(c(proj.incon1, proj.incon2, -proj.congr1, -proj.congr2))
+                mean(c(proj.incon1, proj.incon2))
               
               ## correlation with template method
               
-              cor.incon1.incon2 <- whitecor(betas.ii.train[1, , "run1"], betas.ii.test[1, , "run2"], W2)
-              cor.incon1.congr2 <- whitecor(betas.ii.train[1, , "run1"], betas.ii.test[2, , "run2"], W2)
-              
-              cor.congr1.incon2 <- whitecor(betas.ii.train[2, , "run1"], betas.ii.test[1, , "run2"], W2)
-              cor.congr1.congr2 <- whitecor(betas.ii.train[2, , "run1"], betas.ii.test[2, , "run2"], W2)
+              cor.incon <- whitecor(betas.ii.train[1, , "run1"], betas.ii.test[, "run2"], W2)
+              cor.congr <- whitecor(betas.ii.train[2, , "run1"], betas.ii.test[, "run2"], W2)
               
               a.subj.i.roi.i[train.tr.i, test.tr.i, train.cond.i, test.cond.i, "template"] <- 
-                mean(
-                  c(
-                    atanh(cor.incon1.incon2) - atanh(cor.congr1.incon2),
-                    atanh(cor.congr1.congr2) - atanh(cor.incon1.congr2)
-                  )
-                )
+                mean(c(atanh(cor.incon) - atanh(cor.congr)))
 
             }  ## end 'test' loop
             
-          }  ##
+          }
             
         }
 
